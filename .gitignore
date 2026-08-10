@@ -1,0 +1,16 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+.ipynb_checkpoints/
+.DS_Store
+.vscode/
+.idea/
+
+# Static PNG previews are regenerable; the interactive HTML is the deliverable.
+preview/
+
+# NOTE: data/, results/ and charts/ are deliberately COMMITTED.
+# The dataset is synthetic and seeded, the result tables are small, and the
+# chart HTML must be in the repo for GitHub Pages to serve it.
