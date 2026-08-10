@@ -1,0 +1,40 @@
+{
+  "logrank_p": 0.0,
+  "cox_concordance": 0.7794009289891823,
+  "km_survival": [
+    {
+      "complexity": "Low",
+      "n": 1884,
+      "events": 1684,
+      "km_median_days": 270.0,
+      "S_365": 0.26107449146355316,
+      "S_540": 0.07069990677437833,
+      "S_720": 0.02577200194655305,
+      "naive_median_days": 257.0,
+      "bias_days": 13.0
+    },
+    {
+      "complexity": "Medium",
+      "n": 2129,
+      "events": 1646,
+      "km_median_days": 451.0,
+      "S_365": 0.6883635090296261,
+      "S_540": 0.34582548271541574,
+      "S_720": 0.16042108130372226,
+      "naive_median_days": 418.0,
+      "bias_days": 33.0
+    },
+    {
+      "complexity": "High",
+      "n": 987,
+      "events": 537,
+      "km_median_days": 782.0,
+      "S_365": 0.9470812490087499,
+      "S_540": 0.7813869374765419,
+      "S_720": 0.5573837355857563,
+      "naive_median_days": 635.0,
+      "bias_days": 147.0
+    }
+  ],
+  "judge_grant_rate_spread": 0.34104457205359584
+}

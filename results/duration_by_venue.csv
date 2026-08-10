@@ -1,0 +1,8 @@
+court_venue,n,median_days,q1,q3,iqr
+High Court — KBD (TCC),461,424.0,309.0,587.0,278.0
+High Court — Chancery Division,643,403.0,284.0,589.0,305.0
+London Commercial Court,967,375.0,255.0,530.0,275.0
+US District Court — N.D. Cal.,431,341.0,233.0,498.0,265.0
+Dubai International Fin. Centre,321,318.0,211.0,448.0,237.0
+Singapore International Comm.,413,311.0,221.0,450.0,229.0
+US District Court — S.D.N.Y.,631,309.0,213.0,459.5,246.5

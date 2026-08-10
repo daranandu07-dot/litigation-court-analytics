@@ -1,0 +1,22 @@
+court_venue,case_complexity,n,median_days,q1,q3,iqr
+Dubai International Fin. Centre,Low,142,213.0,167.25,305.5,138.25
+Dubai International Fin. Centre,Medium,129,367.0,281.0,487.0,206.0
+Dubai International Fin. Centre,High,50,553.0,427.75,722.25,294.5
+High Court — Chancery Division,Low,276,291.5,216.25,376.25,160.0
+High Court — Chancery Division,Medium,282,487.5,366.0,628.0,262.0
+High Court — Chancery Division,High,85,698.0,550.0,1022.0,472.0
+High Court — KBD (TCC),Low,240,333.0,247.0,434.0,187.0
+High Court — KBD (TCC),Medium,171,495.0,407.0,667.5,260.5
+High Court — KBD (TCC),High,50,823.5,644.25,942.5,298.25
+London Commercial Court,Low,411,255.0,199.0,343.5,144.5
+London Commercial Court,Medium,406,436.0,330.0,556.0,226.0
+London Commercial Court,High,150,636.0,520.75,850.5,329.75
+Singapore International Comm.,Low,159,224.0,168.5,305.5,137.0
+Singapore International Comm.,Medium,198,360.0,268.5,458.75,190.25
+Singapore International Comm.,High,56,565.0,449.75,751.5,301.75
+US District Court — N.D. Cal.,Low,177,242.0,187.0,330.0,143.0
+US District Court — N.D. Cal.,Medium,200,373.0,287.75,506.0,218.25
+US District Court — N.D. Cal.,High,54,638.0,491.5,874.25,382.75
+US District Court — S.D.N.Y.,Low,279,223.0,176.5,291.0,114.5
+US District Court — S.D.N.Y.,Medium,260,377.0,275.5,489.5,214.0
+US District Court — S.D.N.Y.,High,92,583.5,449.5,713.5,264.0
