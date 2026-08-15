@@ -1,0 +1,1083 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Litigation cohort explorer</title>
+<style>
+  /* ================================================================
+     Palette. Series hues are the validated categorical slots; they are
+     NOT decorative and must not be adjusted for mood. Everything else —
+     surfaces, ink, glow — is chrome and may be expressive.
+     Validated: 3 slots, all-pairs, against surface #0e0e12 (dark) and
+     #fcfcfb (light). Both pass every gate.
+     ================================================================ */
+  .viz-root {
+    color-scheme: dark;
+    --page:#0a0a0e;
+    --surface-1:#131318;
+    --veil:rgba(255,255,255,.045);
+    --veil-2:rgba(255,255,255,.025);
+    --text-primary:#f4f3ef; --text-secondary:#a8a6a0; --muted:#7d7b76;
+    --grid:rgba(255,255,255,.07); --axis:rgba(255,255,255,.16);
+    --border:rgba(255,255,255,.09);
+    --series-1:#3987e5; --series-2:#d95926; --series-3:#199e70;
+    --critical:#e05555;
+    --ghost:rgba(255,255,255,.05);
+    --glow-a:rgba(57,135,229,.16);
+    --glow-b:rgba(217,89,38,.10);
+    --shadow:0 1px 2px rgba(0,0,0,.5), 0 24px 60px -30px rgba(0,0,0,.9);
+    --ring:rgba(57,135,229,.35);
+    --serif: ui-serif, Georgia, "Iowan Old Style", "Times New Roman", serif;
+  }
+  :root[data-theme="light"] .viz-root {
+    color-scheme: light;
+    --page:#f7f6f3;
+    --surface-1:#fcfcfb;
+    --veil:rgba(11,11,11,.035);
+    --veil-2:rgba(11,11,11,.018);
+    --text-primary:#0b0b0b; --text-secondary:#52514e; --muted:#898781;
+    --grid:#e6e5de; --axis:#c3c2b7; --border:rgba(11,11,11,.10);
+    --series-1:#2a78d6; --series-2:#eb6834; --series-3:#1baf7a;
+    --critical:#d03b3b;
+    --ghost:rgba(11,11,11,.04);
+    --glow-a:rgba(42,120,214,.10); --glow-b:rgba(235,104,52,.07);
+    --shadow:0 1px 2px rgba(11,11,11,.05), 0 20px 50px -28px rgba(11,11,11,.30);
+    --ring:rgba(42,120,214,.30);
+  }
+
+  * { box-sizing:border-box; }
+  html,body { margin:0; padding:0; }
+  body {
+    font-family:system-ui,-apple-system,"Segoe UI",sans-serif;
+    background:var(--page); color:var(--text-primary);
+    -webkit-font-smoothing:antialiased; overflow-x:hidden;
+  }
+  /* Atmosphere: two slow colour washes plus fine grain. Fixed, so the page
+     scrolls over a stable field rather than dragging the light with it. */
+  body::before {
+    content:""; position:fixed; inset:-20%; z-index:0; pointer-events:none;
+    background:
+      radial-gradient(46% 38% at 18% 8%,  var(--glow-a) 0%, transparent 68%),
+      radial-gradient(40% 34% at 88% 22%, var(--glow-b) 0%, transparent 66%),
+      radial-gradient(52% 44% at 62% 96%, var(--glow-a) 0%, transparent 72%);
+    animation: drift 34s ease-in-out infinite alternate;
+  }
+  body::after {
+    content:""; position:fixed; inset:0; z-index:0; pointer-events:none; opacity:.5;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='.05'/%3E%3C/svg%3E");
+  }
+  @keyframes drift {
+    0%   { transform:translate3d(0,0,0)      scale(1); }
+    100% { transform:translate3d(-2%,1.5%,0) scale(1.08); }
+  }
+  .wrap { position:relative; z-index:1; max-width:1180px; margin:0 auto; padding:0 20px 90px; }
+
+  /* ---------- hero ---------- */
+  .hero { padding:104px 0 60px; max-width:900px; }
+  .eyebrow { font-size:11px; letter-spacing:.20em; text-transform:uppercase;
+    color:var(--muted); font-weight:640; margin:0 0 22px; }
+  .hero h1 { font-family:var(--serif); font-size:clamp(40px,6.2vw,74px);
+    line-height:1.02; letter-spacing:-.028em; font-weight:500; margin:0 0 26px; }
+  .hero h1 em { font-style:italic; color:var(--series-1); }
+  .lede { font-size:clamp(16px,1.7vw,19px); line-height:1.62; color:var(--text-secondary);
+    max-width:66ch; margin:0 0 34px; }
+  .hero-stats { display:flex; flex-wrap:wrap; gap:40px; align-items:flex-end; }
+  .hstat .n { font-family:var(--serif); font-size:52px; line-height:1;
+    letter-spacing:-.03em; font-variant-numeric:tabular-nums; }
+  .hstat .n.a { color:var(--critical); }
+  .hstat .n.b { color:var(--series-1); }
+  .hstat .l { font-size:11.5px; letter-spacing:.10em; text-transform:uppercase;
+    color:var(--muted); font-weight:640; margin-top:10px; }
+  .hstat .s { font-size:13px; color:var(--text-secondary); margin-top:4px; }
+
+  h2 { font-family:var(--serif); font-size:25px; font-weight:500;
+    letter-spacing:-.016em; margin:0 0 7px; }
+  .sub { color:var(--text-secondary); font-size:14.5px; margin:0 0 20px;
+    line-height:1.62; max-width:76ch; }
+  .note { color:var(--muted); font-size:12.5px; line-height:1.6; }
+
+  .banner { border:1px solid var(--border); border-left:2px solid var(--series-2);
+    background:var(--veil-2); border-radius:12px; padding:15px 18px; margin:0 0 40px;
+    font-size:13px; color:var(--text-secondary); line-height:1.62;
+    backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px); }
+  .banner strong { color:var(--text-primary); }
+
+  /* ---------- cards ---------- */
+  .card { position:relative; overflow:hidden;
+    background:var(--veil); border:1px solid var(--border); border-radius:18px;
+    padding:30px; margin:0 0 26px; box-shadow:var(--shadow);
+    backdrop-filter:blur(20px) saturate(120%); -webkit-backdrop-filter:blur(20px) saturate(120%);
+    transition:border-color .5s ease; }
+  .card:hover { border-color:rgba(255,255,255,.16); }
+  :root[data-theme="light"] .card:hover { border-color:rgba(11,11,11,.18); }
+  /* Pointer-tracked highlight. Purely atmospheric, driven by two CSS vars. */
+  .card::before { content:""; position:absolute; inset:0; pointer-events:none;
+    opacity:0; transition:opacity .5s ease;
+    background:radial-gradient(340px circle at var(--mx,50%) var(--my,0%),
+               rgba(255,255,255,.055), transparent 62%); }
+  .card:hover::before { opacity:1; }
+  :root[data-theme="light"] .card::before {
+    background:radial-gradient(340px circle at var(--mx,50%) var(--my,0%),
+               rgba(11,11,11,.030), transparent 62%); }
+  .card > * { position:relative; }
+
+  .secnum { font-family:var(--serif); font-size:13px; color:var(--muted);
+    letter-spacing:.06em; margin:0 0 2px; }
+
+  /* ---------- reveal on scroll ---------- */
+  .reveal { opacity:0; transform:translateY(22px);
+    transition:opacity .85s cubic-bezier(.16,1,.3,1), transform .85s cubic-bezier(.16,1,.3,1); }
+  .reveal.in { opacity:1; transform:none; }
+
+  /* ---------- controls ---------- */
+  .filters { display:flex; flex-wrap:wrap; gap:24px; align-items:flex-end; margin:20px 0 22px; }
+  .fgroup { display:flex; flex-direction:column; gap:9px; }
+  .flabel { font-size:10.5px; text-transform:uppercase; letter-spacing:.11em;
+    color:var(--muted); font-weight:640; }
+  .flabel b { color:var(--text-primary); font-variant-numeric:tabular-nums; font-weight:640;
+    letter-spacing:0; }
+  .chips { display:flex; gap:7px; flex-wrap:wrap; }
+  .chip { font:inherit; font-size:12.5px; padding:7px 14px; cursor:pointer;
+    border:1px solid var(--border); border-radius:999px; background:transparent;
+    color:var(--text-secondary); transition:all .3s cubic-bezier(.16,1,.3,1); }
+  .chip:hover { background:var(--ghost); color:var(--text-primary); transform:translateY(-1.5px); }
+  .chip:active { transform:translateY(0); }
+  .chip[aria-pressed="true"] { background:var(--text-primary); color:var(--page);
+    border-color:var(--text-primary); font-weight:620; }
+  .chip:focus-visible { outline:2px solid var(--series-1); outline-offset:3px; }
+
+  input[type=range] { -webkit-appearance:none; appearance:none; background:transparent;
+    width:100%; height:24px; cursor:pointer; }
+  input[type=range]::-webkit-slider-runnable-track { height:4px; border-radius:99px; background:var(--grid); }
+  input[type=range]::-moz-range-track { height:4px; border-radius:99px; background:var(--grid); }
+  input[type=range]::-webkit-slider-thumb { -webkit-appearance:none; appearance:none;
+    width:16px; height:16px; border-radius:50%; background:var(--series-1); margin-top:-6px;
+    border:2px solid var(--page); box-shadow:0 0 0 1px var(--ring), 0 2px 10px rgba(0,0,0,.5);
+    transition:transform .22s cubic-bezier(.16,1,.3,1), box-shadow .22s ease; }
+  input[type=range]::-moz-range-thumb { width:16px; height:16px; border-radius:50%;
+    background:var(--series-1); border:2px solid var(--page);
+    box-shadow:0 0 0 1px var(--ring), 0 2px 10px rgba(0,0,0,.5); }
+  input[type=range]:hover::-webkit-slider-thumb { transform:scale(1.3);
+    box-shadow:0 0 0 6px var(--ring), 0 2px 12px rgba(0,0,0,.55); }
+  input[type=range]:focus-visible::-webkit-slider-thumb { box-shadow:0 0 0 6px var(--ring); }
+
+  .timeline { display:flex; align-items:center; gap:18px; }
+  .play { flex:0 0 auto; width:52px; height:52px; border-radius:50%; cursor:pointer;
+    border:1px solid var(--border); background:var(--veil); color:var(--text-primary);
+    display:grid; place-items:center; position:relative;
+    transition:all .3s cubic-bezier(.16,1,.3,1); }
+  .play::after { content:""; position:absolute; inset:-1px; border-radius:50%;
+    border:1px solid var(--series-1); opacity:0; transform:scale(.85);
+    transition:all .45s cubic-bezier(.16,1,.3,1); }
+  .play:hover { color:var(--series-1); transform:scale(1.06); }
+  .play:hover::after { opacity:.55; transform:scale(1.16); }
+  .play:active { transform:scale(.97); }
+  .play.on::after { opacity:.5; animation:pulse 1.9s ease-out infinite; }
+  @keyframes pulse { 0%{transform:scale(.95);opacity:.6} 100%{transform:scale(1.5);opacity:0} }
+  .play svg { width:17px; height:17px; fill:currentColor; }
+
+  /* ---------- stat tiles ---------- */
+  .tiles { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr));
+    gap:1px; margin:10px 0 26px; background:var(--border);
+    border:1px solid var(--border); border-radius:14px; overflow:hidden; }
+  .tile { padding:18px 18px 17px; background:var(--surface-1);
+    transition:background .35s ease; }
+  .tile:hover { background:var(--veil); }
+  .tile .k { font-size:10px; text-transform:uppercase; letter-spacing:.11em;
+    color:var(--muted); font-weight:640; }
+  .tile .v { font-family:var(--serif); font-size:36px; font-weight:500; margin-top:9px;
+    letter-spacing:-.03em; font-variant-numeric:tabular-nums; line-height:1; }
+  .tile .u { font-family:system-ui,sans-serif; font-size:12.5px; font-weight:500;
+    color:var(--muted); margin-left:5px; letter-spacing:0; }
+  .tile .d { font-size:11.5px; color:var(--text-secondary); margin-top:7px; }
+  .tile.hero .v { color:var(--series-1); }
+  .tile.gap .v { color:var(--critical); }
+
+  .legend { display:flex; gap:18px; flex-wrap:wrap; margin:2px 0 8px; }
+  .lg { display:inline-flex; align-items:center; gap:8px; font-size:12.5px;
+    color:var(--text-secondary); }
+  .lg i { width:10px; height:10px; border-radius:3px; display:inline-block; }
+
+  svg { display:block; width:100%; height:auto; overflow:visible; }
+  .gridline { stroke:var(--grid); stroke-width:1; }
+  .axisline { stroke:var(--axis); stroke-width:1; }
+  .tick { fill:var(--muted); font-size:11px; }
+  .axtitle { fill:var(--text-secondary); font-size:11.5px; font-weight:620;
+    letter-spacing:.02em; }
+  .dlabel { font-size:12px; font-weight:660; paint-order:stroke;
+    stroke:var(--surface-1); stroke-width:3.5px; }
+
+  table { border-collapse:collapse; width:100%; font-size:13px; margin-top:6px; }
+  th,td { text-align:right; padding:9px 10px; border-bottom:1px solid var(--border);
+    font-variant-numeric:tabular-nums; }
+  th:first-child, td:first-child { text-align:left; font-variant-numeric:normal; }
+  th { color:var(--muted); font-size:10px; text-transform:uppercase;
+    letter-spacing:.09em; font-weight:640; }
+  .swatch { width:9px; height:9px; border-radius:2px; display:inline-block; margin-right:8px; }
+
+  .toggle { font:inherit; font-size:12px; padding:7px 14px; cursor:pointer;
+    background:transparent; color:var(--text-secondary); border:1px solid var(--border);
+    border-radius:999px; transition:all .3s cubic-bezier(.16,1,.3,1); }
+  .toggle:hover { background:var(--ghost); color:var(--text-primary); }
+  .row { display:flex; justify-content:space-between; align-items:flex-start; gap:18px; }
+  .hidden { display:none; }
+
+  .tip { position:fixed; pointer-events:none; z-index:60; opacity:0;
+    background:var(--surface-1); color:var(--text-primary); border:1px solid var(--border);
+    border-radius:11px; padding:10px 13px; font-size:12.5px; line-height:1.55;
+    box-shadow:0 20px 50px -20px rgba(0,0,0,.85); transition:opacity .14s;
+    font-variant-numeric:tabular-nums; backdrop-filter:blur(14px); }
+
+  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:30px; }
+  @media (max-width:880px){ .grid2 { grid-template-columns:1fr; } }
+
+  .pill { display:inline-block; font-size:11px; font-weight:620; padding:5px 12px;
+    border-radius:99px; background:var(--veil); color:var(--text-secondary);
+    border:1px solid var(--border); white-space:nowrap;
+    font-variant-numeric:tabular-nums; }
+
+  .topbar { position:fixed; top:18px; right:22px; z-index:40; display:flex; gap:9px; }
+
+  footer { color:var(--muted); font-size:12.5px; line-height:1.75; margin-top:44px;
+    padding-top:26px; border-top:1px solid var(--border); }
+  a { color:var(--series-1); text-decoration:none; border-bottom:1px solid var(--ring); }
+  a:hover { border-bottom-color:var(--series-1); }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, .card, .chip, .tile, .play { transition:none !important; animation:none !important; }
+    .reveal { opacity:1; transform:none; }
+    body::before { animation:none; }
+  }
+</style>
+</head>
+<body class="viz-root">
+<div class="topbar"><button class="toggle" id="theme">Light</button></div>
+<div class="wrap">
+
+  <header class="hero">
+    <p class="eyebrow reveal">Litigation analytics · synthetic docket</p>
+    <h1 class="reveal">Most litigation forecasts are wrong in the <em>same direction</em>.</h1>
+    <p class="lede reveal">
+      They are built from cases that already finished. But in a live docket the slow matters are
+      precisely the ones still running — so leaving them out makes every estimate too optimistic,
+      every time. This page makes that error something you can watch happen.
+    </p>
+    <div class="hero-stats reveal">
+      <div class="hstat">
+        <div class="n a" id="h-naive">—</div>
+        <div class="l">Naive median</div>
+        <div class="s">averaging closed cases</div>
+      </div>
+      <div class="hstat">
+        <div class="n b" id="h-km">—</div>
+        <div class="l">Censoring-corrected</div>
+        <div class="s">Kaplan-Meier estimate</div>
+      </div>
+      <div class="hstat">
+        <div class="n" id="h-gap">—</div>
+        <div class="l">Understated by</div>
+        <div class="s">on this cohort</div>
+      </div>
+    </div>
+  </header>
+
+  <div class="banner reveal">
+    <strong>Synthetic data.</strong> This docket is generated, not observed — no figure here
+    describes any real court, judge or case. Duration and scale parameters are calibrated against
+    Ministry of Justice Civil Justice Statistics (Q1 2026) and the Commercial Court Annual Report
+    2023–24; many others are modelling choices. Judges are anonymous identifiers by design.
+  </div>
+
+  <!-- ===================== 1. CENSORING ===================== -->
+  <div class="card reveal">
+    <div class="row">
+      <div>
+        <p class="secnum">01</p>
+        <h2>Press play</h2>
+        <p class="sub">
+          Cases still open have no duration yet, so the obvious approach — average the ones that
+          finished — throws them away. Because the slow cases are the ones still running, that
+          answer is always too optimistic. Watch the two medians separate as the observation date
+          moves earlier.
+        </p>
+      </div>
+      <span class="pill" id="cohort-pill"></span>
+    </div>
+
+    <div class="filters">
+      <div class="fgroup">
+        <span class="flabel">Complexity</span>
+        <div class="chips" id="f-cx"></div>
+      </div>
+      <div class="fgroup">
+        <span class="flabel">Venue</span>
+        <div class="chips" id="f-venue"></div>
+      </div>
+      <div class="fgroup" style="min-width:230px">
+        <span class="flabel">Claim value — <b id="f-claim-label"></b></span>
+        <input type="range" id="f-claim-lo" min="0" max="100" value="0">
+        <input type="range" id="f-claim-hi" min="0" max="100" value="100">
+      </div>
+    </div>
+
+    <div class="fgroup" style="margin-bottom:20px">
+      <span class="flabel">Observation date — <b id="snap-label"></b></span>
+      <div class="timeline">
+        <button class="play" id="play" aria-label="Play timeline">
+          <svg viewBox="0 0 16 16" id="play-icon"><path d="M3 1.5v13l11-6.5z"/></svg>
+        </button>
+        <input type="range" id="snap" min="400" max="1642" value="1642" step="1">
+      </div>
+      <span class="note" id="snap-note"></span>
+    </div>
+
+    <div class="tiles" id="tiles"></div>
+
+    <div class="grid2" style="gap:26px">
+      <div>
+        <div class="row" style="margin-bottom:2px">
+          <div class="legend" id="legend"></div>
+          <button class="toggle" id="tbl-toggle">Table</button>
+        </div>
+        <div id="chart-km"></div>
+        <div id="tbl-km" class="hidden">
+          <table>
+            <thead><tr><th>Complexity</th><th>n</th><th>Open</th>
+              <th>Naive</th><th>KM</th><th>Gap</th></tr></thead>
+            <tbody id="tbl-km-body"></tbody>
+          </table>
+        </div>
+        <p class="note" style="margin-top:10px">Survival curves at the current observation date.</p>
+      </div>
+
+      <div>
+        <div class="legend" style="margin-bottom:6px">
+          <span class="lg"><i style="background:var(--critical)"></i>Naive — closed cases only</span>
+          <span class="lg"><i style="background:var(--series-1)"></i>Kaplan-Meier</span>
+        </div>
+        <div id="chart-bias"></div>
+        <p class="note" style="margin-top:10px" id="bias-caption"></p>
+      </div>
+    </div>
+
+    <p class="note" style="margin-top:16px" id="km-caption"></p>
+  </div>
+
+  <!-- ===================== 2. PREDICTOR ===================== -->
+  <div class="card reveal">
+    <p class="secnum">02</p>
+    <h2>Duration estimate for a single matter</h2>
+    <p class="sub">
+      The entire fitted model runs in this page — a Log-Normal AFT is a dot product and a normal
+      CDF, so its coefficients serialise to about a kilobyte. There is no server behind this.
+    </p>
+
+    <div class="grid2">
+      <div>
+        <div class="filters" style="flex-direction:column; align-items:stretch; gap:16px">
+          <div class="fgroup">
+            <span class="flabel">Complexity</span>
+            <div class="chips" id="p-cx"></div>
+          </div>
+          <div class="fgroup">
+            <span class="flabel">Venue</span>
+            <div class="chips" id="p-venue"></div>
+          </div>
+          <div class="fgroup">
+            <span class="flabel">Claim value — <b id="p-claim-label"></b></span>
+            <input type="range" id="p-claim" min="0" max="100" value="42">
+          </div>
+          <div class="fgroup">
+            <span class="flabel">Interlocutory applications — <b id="p-mot-label"></b></span>
+            <input type="range" id="p-mot" min="0" max="12" step="1" value="2">
+          </div>
+          <div class="fgroup">
+            <span class="flabel">Summary judgment applied for</span>
+            <div class="chips" id="p-sj"></div>
+          </div>
+        </div>
+      </div>
+      <div>
+        <div class="tiles" id="p-tiles"></div>
+        <div id="chart-pred"></div>
+      </div>
+    </div>
+
+    <p class="note" style="margin-top:14px">
+      This is a <b>median</b> for a portfolio of matters with these characteristics, not a
+      prediction about any individual case — half of such matters run longer than the figure shown.
+      It is deliberately not a case-outcome predictor: the sample supports portfolio-level
+      statements, and anything narrower would edge toward advice.
+    </p>
+  </div>
+
+  <!-- ===================== 3. JUDGES ===================== -->
+  <div class="card reveal">
+    <p class="secnum">03</p>
+    <h2>Summary-judgment grant rates across the bench</h2>
+    <p class="sub">
+      Each judge with a 95% Wilson interval. A judge with 150 applications and one with 300 do not
+      warrant equal confidence, so the interval — not the point estimate — is the mark to read.
+      Highlighted judges are those whose interval excludes the panel rate.
+    </p>
+    <div id="chart-judges"></div>
+    <p class="note" style="margin-top:12px">
+      <b>Judges are anonymous by design, not by omission.</b> France criminalised the publication of
+      judicial analytics identifying individual judges in 2019 (Article 33 of its justice reform
+      act). The UK and US permit it. Building for the most restrictive plausible jurisdiction costs
+      nothing here and makes the tool portable; identifiers carry the analysis perfectly well.
+    </p>
+  </div>
+
+  <footer>
+    Generated <span id="gen"></span> from <span id="ncases"></span> synthetic commercial disputes ·
+    <a href="https://github.com/daranandu07-dot/litigation-court-analytics">source and methodology</a> ·
+    Kaplan-Meier recomputed in-browser at every observation date · your current view is in the URL.
+  </footer>
+</div>
+
+<div class="tip" id="tip"></div>
+
+<script>
+const DATA = /*__DATA__*/;
+const C = DATA.cases, M = DATA.meta;
+const CX_COLORS = ["var(--series-1)","var(--series-2)","var(--series-3)"];
+const $ = s => document.querySelector(s);
+const tip = $("#tip");
+const REDUCED = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+/* Typed views — the timeline animation recomputes the whole cohort every frame,
+   so the hot loop must not allocate. */
+const N = M.n;
+const T_CX = Int8Array.from(C.cx), T_VEN = Int8Array.from(C.venue);
+const T_CLAIM = Float64Array.from(C.claim);
+const T_FILE = Int32Array.from(C.file), T_RES = Int32Array.from(C.res);
+const BUF_T = new Int32Array(N), BUF_E = new Uint8Array(N), BUF_CX = new Int8Array(N);
+
+/* Survival curves are tweened, so every curve is sampled onto one fixed grid.
+   Interpolating between two aligned arrays is trivial; morphing raw step
+   functions with different breakpoints is not. */
+const GRID_MAX = 1200, GRID_STEP = 6;
+const GRID = Array.from({length:GRID_MAX/GRID_STEP+1},(_,i)=>i*GRID_STEP);
+const GN = GRID.length;
+
+/* ---------- maths ---------- */
+function erf(x){ const s=x<0?-1:1; x=Math.abs(x);
+  const t=1/(1+0.3275911*x);
+  const y=1-((((1.061405429*t-1.453152027)*t+1.421413741)*t-0.284496736)*t+0.254829592)*t*Math.exp(-x*x);
+  return s*y; }
+const normCdf = z => 0.5*(1+erf(z/Math.SQRT2));
+function inverf(y){ const a=0.147, ln=Math.log(1-y*y), p=2/(Math.PI*a)+ln/2;
+  return Math.sign(y)*Math.sqrt(Math.sqrt(p*p-ln/a)-p); }
+
+/* Kaplan-Meier over a slice of the shared buffers, sampled onto GRID.
+   Returns {curve:Float64Array(GN), median, n, events}. */
+function kmGrid(count, cxWanted){
+  const idx=[];
+  for(let i=0;i<count;i++) if(cxWanted<0||BUF_CX[i]===cxWanted) idx.push(i);
+  const out=new Float64Array(GN).fill(1);
+  if(!idx.length) return {curve:out, median:null, n:0, events:0};
+  idx.sort((a,b)=>BUF_T[a]-BUF_T[b]);
+
+  let surv=1, atRisk=idx.length, g=0, median=null, events=0, i=0;
+  while(i<idx.length){
+    const time=BUF_T[idx[i]];
+    let d=0,r=0;
+    while(i<idx.length && BUF_T[idx[i]]===time){ if(BUF_E[idx[i]]){d++;events++;} r++; i++; }
+    while(g<GN && GRID[g]<time){ out[g]=surv; g++; }
+    if(d>0&&atRisk>0){ surv*=(1-d/atRisk); if(median===null&&surv<=0.5) median=time; }
+    atRisk-=r;
+  }
+  while(g<GN){ out[g]=surv; g++; }
+  return {curve:out, median, n:idx.length, events};
+}
+
+function naiveMedian(count, cxWanted){
+  const v=[];
+  for(let i=0;i<count;i++) if((cxWanted<0||BUF_CX[i]===cxWanted)&&BUF_E[i]) v.push(BUF_T[i]);
+  if(!v.length) return null;
+  v.sort((a,b)=>a-b); const m=v.length>>1;
+  return v.length%2 ? v[m] : (v[m-1]+v[m])/2;
+}
+
+/* Fill the shared buffers for a snapshot day. Returns how many rows are live. */
+function fillCohort(snapDay){
+  let k=0;
+  for(let i=0;i<N;i++){
+    if(!state.cx.has(T_CX[i])) continue;
+    if(state.ven.size && !state.ven.has(T_VEN[i])) continue;
+    const v=T_CLAIM[i]; if(v<state.claimLo||v>state.claimHi) continue;
+    const f=T_FILE[i]; if(f>snapDay) continue;
+    const r=T_RES[i];
+    if(r>=0&&r<=snapDay){ BUF_T[k]=r-f; BUF_E[k]=1; }
+    else { BUF_T[k]=snapDay-f; BUF_E[k]=0; }
+    BUF_CX[k]=T_CX[i]; k++;
+  }
+  return k;
+}
+
+const fmtGbp = v => v>=1e6 ? "£"+(v/1e6).toFixed(v>=1e7?0:1).replace(/\.0$/,"")+"m"
+                  : "£"+Math.round(v/1000)+"k";
+const dayToDate = d => new Date(Date.parse(M.epoch)+d*864e5)
+  .toLocaleDateString("en-GB",{month:"short",year:"numeric"});
+// Claim slider is 0-100 mapped logarithmically — £50k to £10m is two and a half
+// orders of magnitude and a linear slider spends 90% of its travel above £1m.
+const CLAIM_MIN=50000, CLAIM_MAX=10000000;
+const pctToClaim = p => Math.round(CLAIM_MIN*Math.pow(CLAIM_MAX/CLAIM_MIN,p/100));
+
+/* ---------- state (mirrored into the URL) ---------- */
+const state = { cx:new Set([0,1,2]), ven:new Set(), claimLo:CLAIM_MIN, claimHi:CLAIM_MAX,
+                snap:M.as_of_day, table:false };
+const pred  = { cx:2, venue:0, claim:750000, mot:2, sj:1 };
+
+function writeUrl(){
+  const p=new URLSearchParams();
+  if(state.cx.size<3) p.set("cx",[...state.cx].join(""));
+  if(state.ven.size)  p.set("v",[...state.ven].join(""));
+  if(state.claimLo>CLAIM_MIN) p.set("lo",state.claimLo);
+  if(state.claimHi<CLAIM_MAX) p.set("hi",state.claimHi);
+  if(state.snap!==M.as_of_day) p.set("t",state.snap);
+  history.replaceState(null,"",p.toString()?"?"+p:location.pathname);
+}
+function readUrl(){
+  const p=new URLSearchParams(location.search);
+  if(p.get("cx")) state.cx=new Set([...p.get("cx")].map(Number));
+  if(p.get("v"))  state.ven=new Set([...p.get("v")].map(Number));
+  if(p.get("lo")) state.claimLo=+p.get("lo");
+  if(p.get("hi")) state.claimHi=+p.get("hi");
+  if(p.get("t"))  state.snap=+p.get("t");
+}
+
+/* ---------- animation ---------- */
+const easeOut = t => 1-Math.pow(1-t,3);
+function tween(dur, step){
+  if(REDUCED){ step(1); return; }
+  const t0=performance.now();
+  (function frame(now){
+    const k=Math.min(1,(now-t0)/dur);
+    step(easeOut(k));
+    if(k<1) requestAnimationFrame(frame);
+  })(performance.now());
+}
+
+/* ---------- svg helpers ---------- */
+const NS="http://www.w3.org/2000/svg";
+function el(tag,attrs,parent){ const n=document.createElementNS(NS,tag);
+  for(const k in attrs) n.setAttribute(k,attrs[k]); if(parent) parent.appendChild(n); return n; }
+function showTip(e,html){ tip.innerHTML=html; tip.style.opacity=1;
+  const p=14,w=tip.offsetWidth,h=tip.offsetHeight;
+  let x=e.clientX+p,y=e.clientY+p;
+  if(x+w>innerWidth-8) x=e.clientX-w-p;
+  if(y+h>innerHeight-8) y=e.clientY-h-p;
+  tip.style.left=x+"px"; tip.style.top=y+"px"; }
+const hideTip = () => tip.style.opacity=0;
+
+/* ============ survival chart (persistent, tweened) ============ */
+function makeSurvivalChart(mount, opts){
+  const W=opts.width||560, H=opts.height||300,
+        mL=48, mR=opts.mR??96, mT=12, mB=44;
+  const pw=W-mL-mR, ph=H-mT-mB, xMax=opts.xMax||GRID_MAX;
+  mount.innerHTML="";
+  const svg=el("svg",{viewBox:`0 0 ${W} ${H}`,role:"img"},mount);
+  const X=v=>mL+Math.min(v,xMax)/xMax*pw, Y=v=>mT+(1-v)*ph;
+
+  for(let p=0;p<=100;p+=25){
+    el("line",{x1:mL,x2:mL+pw,y1:Y(p/100),y2:Y(p/100),class:"gridline"},svg);
+    el("text",{x:mL-9,y:Y(p/100)+4,"text-anchor":"end",class:"tick"},svg).textContent=p+"%";
+  }
+  for(let d=0;d<=xMax;d+=365)
+    el("text",{x:X(d),y:mT+ph+20,"text-anchor":"middle",class:"tick"},svg).textContent=d;
+  el("line",{x1:mL,x2:mL+pw,y1:mT+ph,y2:mT+ph,class:"axisline"},svg);
+  el("text",{x:mL+pw/2,y:H-5,"text-anchor":"middle",class:"axtitle"},svg)
+    .textContent="Days since filing";
+  el("line",{x1:mL,x2:mL+pw,y1:Y(.5),y2:Y(.5),stroke:"var(--axis)",
+             "stroke-width":1,"stroke-dasharray":"2 4"},svg);
+
+  const paths=[], labels=[], medlines=[];
+  for(let i=0;i<3;i++){
+    medlines.push(el("line",{stroke:CX_COLORS[i],"stroke-width":1,
+      "stroke-dasharray":"3 3",opacity:0},svg));
+    paths.push(el("path",{fill:"none",stroke:CX_COLORS[i],"stroke-width":2,
+      "stroke-linejoin":"round","stroke-linecap":"round",opacity:0},svg));
+    labels.push(el("text",{x:mL+pw+9,class:"dlabel",fill:CX_COLORS[i],opacity:0},svg));
+  }
+
+  const hair=el("line",{y1:mT,y2:mT+ph,stroke:"var(--axis)","stroke-width":1,opacity:0},svg);
+  const dots=[0,1,2].map(i=>el("circle",{r:4.5,fill:CX_COLORS[i],
+    stroke:"var(--surface-1)","stroke-width":2,opacity:0},svg));
+  const hit=el("rect",{x:mL,y:mT,width:pw,height:ph,fill:"transparent"},svg);
+
+  let shown=[null,null,null];      // Float64Array per complexity, or null
+
+  function pathFor(curve){
+    let d=`M ${X(0)} ${Y(1)}`;
+    for(let g=1;g<GN;g++){
+      if(GRID[g]>xMax) break;
+      d+=` L ${X(GRID[g])} ${Y(curve[g-1])} L ${X(GRID[g])} ${Y(curve[g])}`;
+    }
+    return d;
+  }
+  function place(){
+    const live=[];
+    for(let i=0;i<3;i++) if(shown[i]) live.push({i,y:Y(shown[i][GN-1])});
+    live.sort((a,b)=>a.y-b.y);
+    for(let k=1;k<live.length;k++)
+      if(live[k].y-live[k-1].y<15) live[k].y=live[k-1].y+15;
+    const over=live.length?Math.max(0,live[live.length-1].y-(mT+ph)):0;
+    live.forEach(l=>{ labels[l.i].setAttribute("y",l.y-over+4);
+                      labels[l.i].textContent=DATA.complexities[l.i]; });
+  }
+
+  hit.addEventListener("mousemove",ev=>{
+    const box=svg.getBoundingClientRect();
+    const day=Math.max(0,Math.round(((ev.clientX-box.left)/box.width*W-mL)/pw*xMax));
+    hair.setAttribute("x1",X(day)); hair.setAttribute("x2",X(day)); hair.setAttribute("opacity",.7);
+    let rows=`<b>${day} days</b>`;
+    for(let i=0;i<3;i++){
+      if(!shown[i]){ dots[i].setAttribute("opacity",0); continue; }
+      const g=Math.min(GN-1,Math.round(day/GRID_STEP)), v=shown[i][g];
+      dots[i].setAttribute("cx",X(day)); dots[i].setAttribute("cy",Y(v));
+      dots[i].setAttribute("opacity",1);
+      rows+=`<br>${DATA.complexities[i]}: ${(v*100).toFixed(1)}% open`;
+    }
+    showTip(ev,rows);
+  });
+  svg.addEventListener("mouseleave",()=>{ hair.setAttribute("opacity",0);
+    dots.forEach(d=>d.setAttribute("opacity",0)); hideTip(); });
+
+  return {
+    update(targets, medians, animate=true){
+      const from=shown.map(c=>c?Float64Array.from(c):null);
+      const dur=animate?420:0;
+      tween(dur,k=>{
+        for(let i=0;i<3;i++){
+          const to=targets[i];
+          if(!to){ paths[i].setAttribute("opacity",0); labels[i].setAttribute("opacity",0);
+                   medlines[i].setAttribute("opacity",0); shown[i]=null; continue; }
+          let cur;
+          if(!from[i]) cur=to;
+          else { cur=new Float64Array(GN);
+                 for(let g=0;g<GN;g++) cur[g]=from[i][g]+(to[g]-from[i][g])*k; }
+          shown[i]=cur;
+          paths[i].setAttribute("d",pathFor(cur));
+          paths[i].setAttribute("opacity",1);
+          labels[i].setAttribute("opacity",1);
+          const m=medians[i];
+          if(m!=null&&m<=xMax){ medlines[i].setAttribute("x1",X(m)); medlines[i].setAttribute("x2",X(m));
+            medlines[i].setAttribute("y1",Y(.5)); medlines[i].setAttribute("y2",mT+ph);
+            medlines[i].setAttribute("opacity",.5); }
+          else medlines[i].setAttribute("opacity",0);
+        }
+        place();
+      });
+    }
+  };
+}
+
+/* ============ bias chart: what each method says, by observation date ============ */
+function makeBiasChart(mount){
+  const W=560,H=300,mL=52,mR=18,mT=14,mB=52, pw=W-mL-mR, ph=H-mT-mB;
+  mount.innerHTML="";
+  const svg=el("svg",{viewBox:`0 0 ${W} ${H}`,role:"img"},mount);
+  let xLo=M.min_file_day+540, xHi=M.as_of_day, yMax=600;
+  const X=d=>mL+(d-xLo)/(xHi-xLo)*pw, Y=v=>mT+ph-(v/yMax)*ph;
+
+  const gridG=el("g",{},svg);
+  const naiveP=el("path",{fill:"none",stroke:"var(--critical)","stroke-width":2,
+    "stroke-linejoin":"round"},svg);
+  const kmP=el("path",{fill:"none",stroke:"var(--series-1)","stroke-width":2,
+    "stroke-linejoin":"round"},svg);
+  const band=el("path",{fill:"var(--critical)",opacity:.10},svg);
+  const nowLine=el("line",{stroke:"var(--text-secondary)","stroke-width":1,
+    "stroke-dasharray":"3 3",y1:mT,y2:mT+ph},svg);
+  const nowN=el("circle",{r:5,fill:"var(--critical)",stroke:"var(--surface-1)","stroke-width":2},svg);
+  const nowK=el("circle",{r:5,fill:"var(--series-1)",stroke:"var(--surface-1)","stroke-width":2},svg);
+  el("text",{x:mL+pw/2,y:H-6,"text-anchor":"middle",class:"axtitle"},svg)
+    .textContent="Observation date";
+  el("text",{x:13,y:mT+ph/2,"text-anchor":"middle",class:"axtitle",
+             transform:`rotate(-90 13 ${mT+ph/2})`},svg).textContent="Median estimate (days)";
+
+  return {
+    update(pts, snap){
+      yMax=Math.max(120,Math.ceil(Math.max(...pts.map(p=>Math.max(p.km||0,p.naive||0)))*1.15/50)*50);
+      gridG.innerHTML="";
+      const stepY=yMax>400?200:100;
+      for(let v=0;v<=yMax;v+=stepY){
+        el("line",{x1:mL,x2:mL+pw,y1:Y(v),y2:Y(v),class:"gridline"},gridG);
+        el("text",{x:mL-9,y:Y(v)+4,"text-anchor":"end",class:"tick"},gridG).textContent=v;
+      }
+      [0,.5,1].forEach(f=>{ const d=xLo+(xHi-xLo)*f;
+        el("text",{x:X(d),y:mT+ph+20,"text-anchor":f===0?"start":f===1?"end":"middle",
+                   class:"tick"},gridG).textContent=dayToDate(Math.round(d)); });
+      el("line",{x1:mL,x2:mL+pw,y1:mT+ph,y2:mT+ph,class:"axisline"},gridG);
+
+      const ok=pts.filter(p=>p.km!=null&&p.naive!=null);
+      if(!ok.length) return;
+      naiveP.setAttribute("d","M "+ok.map(p=>`${X(p.d)} ${Y(p.naive)}`).join(" L "));
+      kmP.setAttribute("d","M "+ok.map(p=>`${X(p.d)} ${Y(p.km)}`).join(" L "));
+      band.setAttribute("d","M "+ok.map(p=>`${X(p.d)} ${Y(p.km)}`).join(" L ")
+        +" L "+[...ok].reverse().map(p=>`${X(p.d)} ${Y(p.naive)}`).join(" L ")+" Z");
+
+      const near=ok.reduce((a,b)=>Math.abs(b.d-snap)<Math.abs(a.d-snap)?b:a);
+      nowLine.setAttribute("x1",X(snap)); nowLine.setAttribute("x2",X(snap));
+      nowN.setAttribute("cx",X(near.d)); nowN.setAttribute("cy",Y(near.naive));
+      nowK.setAttribute("cx",X(near.d)); nowK.setAttribute("cy",Y(near.km));
+    }
+  };
+}
+
+/* ============ predictor chart ============ */
+function drawPred(mount, lp, sigma){
+  const W=430,H=225,mL=46,mR=16,mT=12,mB=42, pw=W-mL-mR, ph=H-mT-mB, xMax=1500;
+  mount.innerHTML="";
+  const svg=el("svg",{viewBox:`0 0 ${W} ${H}`,role:"img"},mount);
+  const X=v=>mL+v/xMax*pw, Y=v=>mT+(1-v)*ph;
+  for(let p=0;p<=100;p+=25){
+    el("line",{x1:mL,x2:mL+pw,y1:Y(p/100),y2:Y(p/100),class:"gridline"},svg);
+    el("text",{x:mL-8,y:Y(p/100)+4,"text-anchor":"end",class:"tick"},svg).textContent=p+"%";
+  }
+  for(let d=0;d<=xMax;d+=365)
+    el("text",{x:X(d),y:mT+ph+19,"text-anchor":"middle",class:"tick"},svg).textContent=d;
+  el("line",{x1:mL,x2:mL+pw,y1:mT+ph,y2:mT+ph,class:"axisline"},svg);
+  el("text",{x:mL+pw/2,y:H-5,"text-anchor":"middle",class:"axtitle"},svg)
+    .textContent="Days since filing";
+
+  const S=t=>1-normCdf((Math.log(t)-lp)/sigma);
+  const q=p=>Math.exp(lp+sigma*Math.SQRT2*inverf(2*p-1));
+  const lo=q(.25), hi=q(.75);
+  if(hi<xMax) el("rect",{x:X(lo),y:mT,width:X(Math.min(hi,xMax))-X(lo),height:ph,
+    fill:"var(--series-1)",opacity:.09},svg);
+
+  let d=`M ${X(1)} ${Y(S(1))}`;
+  for(let t=10;t<=xMax;t+=10) d+=` L ${X(t)} ${Y(S(t))}`;
+  el("path",{d,fill:"none",stroke:"var(--series-1)","stroke-width":2,
+             "stroke-linecap":"round"},svg);
+  const med=Math.exp(lp);
+  if(med<xMax){
+    el("line",{x1:X(med),x2:X(med),y1:Y(.5),y2:mT+ph,stroke:"var(--series-1)",
+               "stroke-width":1,"stroke-dasharray":"3 3",opacity:.6},svg);
+    el("circle",{cx:X(med),cy:Y(.5),r:4.5,fill:"var(--series-1)",
+                 stroke:"var(--surface-1)","stroke-width":2},svg);
+  }
+}
+
+/* ---------- number tweening ---------- */
+const shownVals={};
+function setTile(id, val, fmt){
+  const node=$(id); if(!node) return;
+  const from=shownVals[id]??val;
+  shownVals[id]=val;
+  if(from===val||REDUCED){ node.textContent=fmt(val); return; }
+  tween(380,k=>{ node.textContent=fmt(from+(val-from)*k); });
+}
+
+/* ---------- render ---------- */
+let kmChart, biasChart;
+const BIAS_STEPS=46;
+
+function biasSeries(){
+  const lo=M.min_file_day+540, hi=M.as_of_day, out=[];
+  for(let i=0;i<BIAS_STEPS;i++){
+    const d=Math.round(lo+(hi-lo)*i/(BIAS_STEPS-1));
+    const k=fillCohort(d);
+    out.push({d, km:kmGrid(k,-1).median, naive:naiveMedian(k,-1)});
+  }
+  return out;
+}
+
+function render(animate=true, withBias=true){
+  const k=fillCohort(state.snap);
+  const curves=[null,null,null], meds=[null,null,null], rows=[];
+
+  for(let i=0;i<3;i++){
+    if(!state.cx.has(i)) continue;
+    const r=kmGrid(k,i); if(!r.n) continue;
+    curves[i]=r.curve; meds[i]=r.median;
+    const nv=naiveMedian(k,i);
+    rows.push({name:DATA.complexities[i],color:CX_COLORS[i],n:r.n,
+      open:r.n-r.events,naive:nv,kmv:r.median,
+      gap:(r.median!=null&&nv!=null)?r.median-nv:null});
+  }
+
+  const all=kmGrid(k,-1), naiveAll=naiveMedian(k,-1);
+  const gap=(all.median!=null&&naiveAll!=null)?all.median-naiveAll:null;
+  const openShare=all.n?1-all.events/all.n:0;
+
+  setTile("#t-n",all.n,v=>Math.round(v).toLocaleString());
+  setTile("#t-open",openShare*100,v=>v.toFixed(1)+"%");
+  setTile("#t-naive",naiveAll??0,v=>naiveAll==null?"—":Math.round(v));
+  setTile("#t-km",all.median??0,v=>all.median==null?"—":Math.round(v));
+  setTile("#t-gap",gap??0,v=>gap==null?"—":Math.round(v));
+  setTile("#h-naive",naiveAll??0,v=>naiveAll==null?"—":Math.round(v));
+  setTile("#h-km",all.median??0,v=>all.median==null?"—":Math.round(v));
+  setTile("#h-gap",gap??0,v=>gap==null?"—":"+"+Math.round(v));
+
+  $("#legend").innerHTML=rows.map(r=>
+    `<span class="lg"><i style="background:${r.color}"></i>${r.name}</span>`).join("");
+  kmChart.update(curves,meds,animate);
+
+  $("#tbl-km-body").innerHTML=rows.map(r=>`<tr>
+    <td><span class="swatch" style="background:${r.color}"></span>${r.name}</td>
+    <td>${r.n.toLocaleString()}</td><td>${r.open.toLocaleString()}</td>
+    <td>${r.naive??"—"}</td><td>${r.kmv??"—"}</td>
+    <td>${r.gap!=null?"+"+r.gap:"—"}</td></tr>`).join("");
+
+  $("#snap-label").textContent=dayToDate(state.snap);
+  $("#cohort-pill").textContent=`${all.n.toLocaleString()} of ${M.n.toLocaleString()} cases`;
+  $("#snap-note").textContent = state.snap>=M.as_of_day
+    ? "Full observation window. Press play, or drag, to observe the same docket earlier."
+    : `${(openShare*100).toFixed(0)}% of this cohort is still running at this date.`;
+  $("#km-caption").textContent = gap==null
+    ? "Not enough closed cases in this cohort to compute a median."
+    : `Dropping the ${(openShare*100).toFixed(0)}% still open understates the median by ${gap} days.`;
+
+  if(withBias){
+    const pts=biasSeries();
+    fillCohort(state.snap);
+    biasChart.update(pts,state.snap);
+    const first=pts.find(p=>p.km!=null&&p.naive!=null);
+    const last=[...pts].reverse().find(p=>p.km!=null&&p.naive!=null);
+    if(first&&last) $("#bias-caption").textContent =
+      `Observed early, the naive estimate reads ${Math.round(first.naive)} days; observed at the end `+
+      `of the window it reads ${Math.round(last.naive)}. The Kaplan-Meier estimate moves from `+
+      `${Math.round(first.km)} to ${Math.round(last.km)}. One of these answers depends on when you `+
+      `happened to look. That is the whole argument for survival methods, and the shaded area is the error.`;
+  } else biasChart.update(lastBias,state.snap);
+  writeUrl();
+}
+let lastBias=[];
+
+/* ---------- predictor ---------- */
+function renderPred(){
+  const a=DATA.aft, x={};
+  a.features.forEach(f=>x[f]=0);
+  if("log_claim" in x) x.log_claim=Math.log(pred.claim);
+  if("num_interlocutory_motions" in x) x.num_interlocutory_motions=pred.mot;
+  if("summary_judgment_filed" in x) x.summary_judgment_filed=pred.sj;
+  const ck="case_complexity_"+DATA.complexities[pred.cx]; if(ck in x) x[ck]=1;
+  const vk="court_venue_"+DATA.venues[pred.venue];        if(vk in x) x[vk]=1;
+
+  let lp=a.intercept; a.features.forEach(f=>lp+=a.coef[f]*x[f]);
+  const med=Math.exp(lp), sig=a.sigma;
+  const S=t=>1-normCdf((Math.log(t)-lp)/sig);
+  const q=p=>Math.exp(lp+sig*Math.SQRT2*inverf(2*p-1));
+
+  setTile("#p-med",med,v=>Math.round(v));
+  setTile("#p-yr",med/365,v=>"≈ "+v.toFixed(1)+" years");
+  setTile("#p-365",S(365)*100,v=>Math.round(v));
+  $("#p-iqr").textContent=`${Math.round(q(.25))}–${Math.round(q(.75))}`;
+  drawPred($("#chart-pred"),lp,sig);
+}
+
+/* ---------- judges ---------- */
+function renderJudges(){
+  const j=[...DATA.judges].sort((a,b)=>b.grant_rate-a.grant_rate);
+  const W=760,rowH=30,mT=26,mL=74,mR=64;
+  const pb=mT+j.length*rowH-10, H=pb+58, pw=W-mL-mR;
+  const mount=$("#chart-judges"); mount.innerHTML="";
+  const svg=el("svg",{viewBox:`0 0 ${W} ${H}`,role:"img"},mount);
+  const xMax=.55, X=v=>mL+v/xMax*pw;
+
+  for(let p=0;p<=50;p+=10){
+    el("line",{x1:X(p/100),x2:X(p/100),y1:mT-8,y2:pb,class:"gridline"},svg);
+    el("text",{x:X(p/100),y:pb+22,"text-anchor":"middle",class:"tick"},svg).textContent=p+"%";
+  }
+  el("line",{x1:mL,x2:mL+pw,y1:pb,y2:pb,class:"axisline"},svg);
+  const panel=DATA.panel_rate;
+  el("line",{x1:X(panel),x2:X(panel),y1:mT-14,y2:pb,stroke:"var(--text-secondary)",
+             "stroke-width":1,"stroke-dasharray":"3 3"},svg);
+  el("text",{x:X(panel),y:mT-20,"text-anchor":"middle",class:"tick",
+             fill:"var(--text-secondary)"},svg).textContent=`panel ${(panel*100).toFixed(1)}%`;
+
+  j.forEach((d,i)=>{
+    const y=mT+i*rowH, out=d.outlier===true||d.outlier==="True";
+    const col=out?"var(--series-2)":"var(--series-1)";
+    el("text",{x:mL-12,y:y+4,"text-anchor":"end",class:"tick",
+               fill:"var(--text-secondary)"},svg).textContent=d.judge_id;
+    el("line",{x1:X(d.ci_low),x2:X(d.ci_high),y1:y,y2:y,stroke:col,"stroke-width":2,
+               opacity:.42,"stroke-linecap":"round"},svg);
+    el("circle",{cx:X(d.grant_rate),cy:y,r:5,fill:col,stroke:"var(--surface-1)",
+                 "stroke-width":2},svg);
+    el("text",{x:X(d.ci_high)+10,y:y+4,class:"tick",fill:out?col:"var(--muted)",
+               "font-weight":out?"650":"400","paint-order":"stroke",
+               stroke:"var(--surface-1)","stroke-width":"3px"},svg)
+      .textContent=(d.grant_rate*100).toFixed(1)+"%";
+    el("rect",{x:mL-74,y:y-13,width:W-mL+40,height:26,fill:"transparent"},svg)
+      .addEventListener("mousemove",ev=>showTip(ev,
+        `<b>${d.judge_id}</b><br>${d.court_venue}<br>Grant rate ${(d.grant_rate*100).toFixed(1)}%<br>`+
+        `95% CI ${(d.ci_low*100).toFixed(1)}–${(d.ci_high*100).toFixed(1)}%<br>${d.motions} applications`+
+        (out?"<br><b>Interval excludes panel rate</b>":"")));
+  });
+  svg.addEventListener("mouseleave",hideTip);
+  el("text",{x:mL+pw/2,y:pb+48,"text-anchor":"middle",class:"axtitle"},svg)
+    .textContent="Summary-judgment grant rate";
+}
+
+/* ---------- playback ---------- */
+let playing=false, rafId=null;
+const ICON_PLAY="M3 1.5v13l11-6.5z", ICON_PAUSE="M3 2h3.6v12H3zM9.4 2H13v12H9.4z";
+function setPlayIcon(){
+  $("#play-icon").firstElementChild.setAttribute("d", playing?ICON_PAUSE:ICON_PLAY);
+  $("#play").classList.toggle("on", playing);
+}
+
+function play(){
+  const snap=$("#snap"), lo=+snap.min, hi=+snap.max;
+  playing=true; setPlayIcon();
+  // Sweep backwards: the bias grows as you observe earlier, so running the
+  // clock in reverse is the direction that shows the effect appearing.
+  let d = state.snap<=lo+2 ? hi : state.snap;
+  const DURATION=7000, span=hi-lo, t0=performance.now();
+  const from=d;
+  (function frame(now){
+    if(!playing) return;
+    const k=Math.min(1,(now-t0)/(DURATION*(from-lo)/span||1));
+    d=Math.round(from-(from-lo)*k);
+    state.snap=d; snap.value=d;
+    render(false,false);
+    if(k<1) rafId=requestAnimationFrame(frame);
+    else { playing=false; setPlayIcon(); render(true,true); }
+  })(performance.now());
+}
+function stop(){ playing=false; if(rafId) cancelAnimationFrame(rafId); setPlayIcon(); render(true,true); }
+
+/* ---------- wiring ---------- */
+function chip(text,pressed,title){ const b=document.createElement("button");
+  b.className="chip"; b.textContent=text; b.setAttribute("aria-pressed",pressed);
+  if(title) b.title=title; return b; }
+
+readUrl();
+
+DATA.complexities.forEach((name,i)=>{
+  const b=chip(name,state.cx.has(i));
+  b.onclick=()=>{ if(state.cx.has(i)){ if(state.cx.size===1) return; state.cx.delete(i); }
+                  else state.cx.add(i);
+                  b.setAttribute("aria-pressed",state.cx.has(i)); render(); };
+  $("#f-cx").appendChild(b);
+
+  const p=chip(name,i===pred.cx);
+  p.onclick=()=>{ pred.cx=i; [...$("#p-cx").children].forEach((c,k)=>
+                    c.setAttribute("aria-pressed",k===i)); renderPred(); };
+  $("#p-cx").appendChild(p);
+});
+
+const SHORT=v=>v.replace("High Court — ","").replace("US District Court — ","")
+  .replace("International","Int'l").replace(" Comm.","").replace(" Fin. Centre","");
+DATA.venues.forEach((v,i)=>{
+  const b=chip(SHORT(v),state.ven.has(i),v);
+  b.onclick=()=>{ if(state.ven.has(i)) state.ven.delete(i); else state.ven.add(i);
+                  b.setAttribute("aria-pressed",state.ven.has(i)); render(); };
+  $("#f-venue").appendChild(b);
+
+  const p=chip(SHORT(v),i===pred.venue,v);
+  p.onclick=()=>{ pred.venue=i; [...$("#p-venue").children].forEach((c,k)=>
+                    c.setAttribute("aria-pressed",k===i)); renderPred(); };
+  $("#p-venue").appendChild(p);
+});
+
+["No","Yes"].forEach((label,i)=>{
+  const b=chip(label,i===pred.sj);
+  b.onclick=()=>{ pred.sj=i; [...$("#p-sj").children].forEach((c,k)=>
+                    c.setAttribute("aria-pressed",k===i)); renderPred(); };
+  $("#p-sj").appendChild(b);
+});
+
+const claimLo=$("#f-claim-lo"), claimHi=$("#f-claim-hi");
+const claimToPct = v => Math.round(Math.log(v/CLAIM_MIN)/Math.log(CLAIM_MAX/CLAIM_MIN)*100);
+claimLo.value=claimToPct(state.claimLo); claimHi.value=claimToPct(state.claimHi);
+function claimLabel(){ $("#f-claim-label").textContent=
+  `${fmtGbp(state.claimLo)} – ${fmtGbp(state.claimHi)}`; }
+function onClaim(){
+  let a=+claimLo.value, b=+claimHi.value;
+  if(a>b){ [a,b]=[b,a]; }
+  state.claimLo=pctToClaim(a); state.claimHi=pctToClaim(b);
+  claimLabel(); render();
+}
+claimLo.oninput=onClaim; claimHi.oninput=onClaim; claimLabel();
+
+const snap=$("#snap");
+// Lower bound is set where a median is still computable. Sweeping all the way
+// back to the first filing ends on "—", because at that point almost nothing
+// has closed — true, but a confusing place to leave the viewer.
+snap.min=M.min_file_day+540; snap.max=M.as_of_day; snap.value=state.snap;
+snap.oninput=e=>{ if(playing) stop(); state.snap=+e.target.value; render(false,false); };
+snap.onchange=()=>render(true,true);
+$("#play").onclick=()=>playing?stop():play();
+
+const pClaim=$("#p-claim");
+pClaim.value=claimToPct(pred.claim);
+pClaim.oninput=e=>{ pred.claim=pctToClaim(+e.target.value);
+  $("#p-claim-label").textContent=fmtGbp(pred.claim); renderPred(); };
+$("#p-mot").oninput=e=>{ pred.mot=+e.target.value;
+  $("#p-mot-label").textContent=pred.mot; renderPred(); };
+
+$("#tbl-toggle").onclick=()=>{ state.table=!state.table;
+  $("#tbl-km").classList.toggle("hidden",!state.table);
+  $("#chart-km").classList.toggle("hidden",state.table);
+  $("#tbl-toggle").textContent=state.table?"Chart":"Table"; };
+
+$("#theme").onclick=()=>{ const d=document.documentElement.getAttribute("data-theme")==="dark";
+  document.documentElement.setAttribute("data-theme",d?"light":"dark");
+  $("#theme").textContent=d?"Dark":"Light"; renderJudges(); renderPred(); };
+
+document.addEventListener("keydown",e=>{
+  if(e.code==="Space"&&e.target===document.body){ e.preventDefault(); playing?stop():play(); }
+});
+
+$("#tiles").innerHTML=`
+  <div class="tile"><div class="k">Cases in cohort</div><div class="v" id="t-n">0</div></div>
+  <div class="tile"><div class="k">Still open</div><div class="v" id="t-open">0</div>
+    <div class="d">at this date</div></div>
+  <div class="tile"><div class="k">Naive median</div>
+    <div class="v"><span id="t-naive">0</span><span class="u">days</span></div>
+    <div class="d">closed cases only</div></div>
+  <div class="tile hero"><div class="k">Kaplan-Meier median</div>
+    <div class="v"><span id="t-km">0</span><span class="u">days</span></div>
+    <div class="d">censoring-corrected</div></div>
+  <div class="tile gap"><div class="k">Understated by</div>
+    <div class="v"><span id="t-gap">0</span><span class="u">days</span></div>
+    <div class="d">the bias</div></div>`;
+
+$("#p-tiles").innerHTML=`
+  <div class="tile hero"><div class="k">Median duration</div>
+    <div class="v"><span id="p-med">0</span><span class="u">days</span></div>
+    <div class="d" id="p-yr"></div></div>
+  <div class="tile"><div class="k">Open at 1 year</div>
+    <div class="v"><span id="p-365">0</span><span class="u">%</span></div>
+    <div class="d">still running</div></div>
+  <div class="tile"><div class="k">Middle 50%</div>
+    <div class="v" id="p-iqr" style="font-size:21px"></div>
+    <div class="d">days, interquartile</div></div>`;
+
+$("#gen").textContent=M.generated;
+$("#ncases").textContent=M.n.toLocaleString();
+$("#p-claim-label").textContent=fmtGbp(pred.claim);
+$("#p-mot-label").textContent=pred.mot;
+
+/* Reveal on scroll. Staggered so a section assembles rather than snapping in. */
+if(!REDUCED && "IntersectionObserver" in window){
+  const io=new IntersectionObserver((entries)=>{
+    entries.forEach((e,i)=>{ if(e.isIntersecting){
+      setTimeout(()=>e.target.classList.add("in"), i*90);
+      io.unobserve(e.target); } });
+  },{threshold:.08, rootMargin:"0px 0px -8% 0px"});
+  document.querySelectorAll(".reveal").forEach(n=>io.observe(n));
+} else document.querySelectorAll(".reveal").forEach(n=>n.classList.add("in"));
+
+/* Pointer-tracked highlight on cards. Two CSS vars; the gradient does the rest. */
+document.querySelectorAll(".card").forEach(card=>{
+  card.addEventListener("pointermove",e=>{
+    const r=card.getBoundingClientRect();
+    card.style.setProperty("--mx",((e.clientX-r.left)/r.width*100)+"%");
+    card.style.setProperty("--my",((e.clientY-r.top)/r.height*100)+"%");
+  });
+});
+
+kmChart=makeSurvivalChart($("#chart-km"),{width:560,height:300,xMax:GRID_MAX});
+biasChart=makeBiasChart($("#chart-bias"));
+render(false,true);
+renderPred(); renderJudges();
+</script>
+</body>
+</html>
