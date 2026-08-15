@@ -491,6 +491,93 @@ def test_population_comparison_separates_the_two_cohorts():
     assert defended < commercial
 
 
+# ---------------------------------------------------------------------------
+# 6. THE WEB DASHBOARD
+# ---------------------------------------------------------------------------
+# The dashboard ships the fitted model to the browser. That is only safe if the
+# exported coefficients are the same ones the published tables describe, so
+# that is what these check — plus the disclosures, which travel with the page
+# once it leaves this repository.
+
+WEB = ROOT / "web" / "index.html"
+
+
+@pytest.fixture(scope="session")
+def dashboard() -> str:
+    return WEB.read_text(encoding="utf-8")
+
+
+@pytest.fixture(scope="session")
+def dashboard_payload(dashboard) -> dict:
+    """The JSON blob inlined into the page."""
+    m = re.search(r"const DATA = (\{.*?\});\n", dashboard, re.DOTALL)
+    assert m, "could not find the inlined DATA payload"
+    return json.loads(m.group(1))
+
+
+def test_dashboard_was_generated(dashboard):
+    assert "/*__DATA__*/" not in dashboard, "template placeholder was never filled"
+    assert len(dashboard) > 50_000
+
+
+def test_dashboard_model_matches_the_published_model(dashboard_payload):
+    """The in-browser predictor must be the model in results/, not a refit that
+    has drifted. Time ratio is exp(coef), so this compares like for like.
+    """
+    aft = pd.read_csv(RESULTS / "aft_time_ratios.csv", index_col=0)
+    coef = dashboard_payload["aft"]["coef"]
+
+    assert set(coef) == set(aft.index), "exported covariates differ from results/"
+    for name, row in aft.iterrows():
+        assert np.exp(coef[name]) == pytest.approx(row["time_ratio"], rel=1e-6), name
+
+
+def test_dashboard_model_excludes_outcome_variables(dashboard_payload):
+    """Leakage guard again, at the point the model reaches the public."""
+    for banned in FORBIDDEN_COVARIATES:
+        assert not any(banned in f for f in dashboard_payload["aft"]["features"])
+
+
+def test_dashboard_case_payload_matches_the_dataset(dashboard_payload, committed):
+    cases = dashboard_payload["cases"]
+    assert dashboard_payload["meta"]["n"] == len(committed)
+    for key in ["venue", "cx", "claim", "file", "res"]:
+        assert len(cases[key]) == len(committed), key
+
+    # An open case must carry no disposition day — otherwise the snapshot
+    # slider would leak information the analysis does not have.
+    open_mask = (committed["event_observed"] == 0).to_numpy()
+    res = np.array(cases["res"])
+    assert (res[open_mask] == -1).all()
+    assert (res[~open_mask] >= 0).all()
+
+
+def test_dashboard_snapshot_cannot_run_past_the_real_one(dashboard_payload):
+    """Moving the observation date forwards would require knowing when open
+    cases will close — which is the entire problem being illustrated."""
+    meta = dashboard_payload["meta"]
+    res = np.array(dashboard_payload["cases"]["res"])
+    assert res.max() <= meta["as_of_day"]
+
+
+def test_dashboard_carries_its_disclosures(dashboard):
+    """The page travels away from this repository, so it has to explain itself."""
+    # Collapse whitespace first: the source wraps these sentences across lines,
+    # so a naive substring search fails on prose that is actually present.
+    flat = re.sub(r"\s+", " ", dashboard).lower()
+    assert "synthetic" in flat
+    assert "not a prediction about any individual case" in flat
+    # Judicial anonymisation and its reason must both survive.
+    assert "anonymous" in flat
+    assert "article 33" in flat
+
+
+def test_dashboard_names_no_judges(dashboard_payload):
+    for judge in dashboard_payload["judges"]:
+        assert "judge_name" not in judge
+        assert not any("Hon." in str(v) for v in judge.values())
+
+
 def test_readme_discloses_synthetic_data(readme):
     """Non-negotiable. The disclosure is what makes everything else defensible."""
     lowered = readme.lower()

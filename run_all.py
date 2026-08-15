@@ -14,6 +14,7 @@ STAGES = [
     ("Running statistical analysis", "analysis.py"),
     ("Building interactive charts", "charts.py"),
     ("Comparing the two populations", "compare_populations.py"),
+    ("Building the web dashboard", "export_web.py"),
 ]
 
 for label, script in STAGES:

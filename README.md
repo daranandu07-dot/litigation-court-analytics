@@ -207,7 +207,36 @@ One procedural detail worth noting, because it is where the law sets a hard cons
 
 ---
 
-## Interactive charts
+## Interactive dashboard
+
+**[Open the cohort explorer →](https://daranandu07-dot.github.io/litigation-court-analytics/web/)**
+
+A single self-contained page — no build step, no bundler, no server, no `fetch`. It works opened straight off disk and served from GitHub Pages, and the pipeline regenerates it so it cannot drift from the analysis.
+
+**1 · Drag the observation date backwards.** The point of the whole project, made operable. Every case carries its filing day and, if it closed, its disposition day, so the page recomputes Kaplan-Meier from scratch at any snapshot date. Drag the date earlier and watch what happens:
+
+| Observation date | Still open | Naive median | KM median | Understated by |
+|---|---|---|---|---|
+| Jun 2026 | 22.2% | 359 d | **410 d** | 51 d |
+| Jun 2025 | 38.0% | 341 d | **410 d** | 69 d |
+| Aug 2024 | 49.2% | 310 d | **408 d** | 98 d |
+| Dec 2023 | 59.6% | 285 d | **403 d** | 118 d |
+
+The naive answer collapses from 359 days to 285 as you observe the docket earlier. The censoring-corrected estimate barely moves — 410 to 403. **That is the argument for survival methods in one interaction**, and it is far more convincing than the paragraph above it.
+
+The slider deliberately cannot move *forwards* past the real snapshot, because for cases still open we do not know when they would have closed — which is precisely the problem being illustrated.
+
+**2 · Duration estimate for a single matter.** The entire fitted model runs in the page. A Log-Normal AFT is a linear predictor in log-time, so the median is `exp(b'x)` and the survival function is `1 − Φ((log t − b'x) / σ)` — a dot product and a normal CDF. The whole model serialises to **11 coefficients, an intercept and a sigma: about 1.1 KB.** There is no inference endpoint and no backend, and [`tests/test_pipeline.py`](tests/test_pipeline.py) asserts the exported coefficients match `results/aft_time_ratios.csv`, so the in-browser model cannot drift from the published one.
+
+That test earned its place immediately: the first version of the export read `case_complexity` as a plain column, so pandas sorted it alphabetically and made *High* the reference level, where `analysis.py` uses an ordered categorical and references *Low*. The dashboard looked entirely normal and predicted the wrong thing. The browser's output is now cross-checked against `lifelines` directly, and agrees to the day.
+
+**3 · Judicial variance,** with Wilson intervals drawn as the primary mark rather than the point estimate, and the anonymisation rationale surfaced in the interface rather than buried in docs.
+
+Deliberately **not** built: a per-case "will I win" predictor. The sample supports portfolio-level statements, not advice about an individual matter; it would edge toward something a regulator would treat as legal advice; and it is the exact use case French law criminalises. Declining to build it is a design decision, and the page says so.
+
+---
+
+## Static charts
 
 Four standalone, self-contained HTML charts in [`charts/`](charts/) — [`charts/index.html`](charts/index.html) previews all four.
 
@@ -247,6 +276,8 @@ Or run the stages individually:
 python src/generate_dataset.py   # writes data/
 python src/analysis.py           # writes results/
 python src/charts.py             # writes charts/
+python src/compare_populations.py  # writes the population comparison
+python src/export_web.py         # writes web/index.html
 ```
 
 Runtime is under a minute. To run the checks:
@@ -275,7 +306,7 @@ That is worth being direct about, because it changes what you should look at. AI
 - **Choosing the problem.** Framing this around censoring — rather than the obvious "predict who wins" — is the decision that makes the rest of it worth doing.
 - **Catching the Cox failure.** The first working version reported hazard ratios and stopped. Testing the proportional-hazards assumption, finding it violated on 7 of 11 covariates, and switching specification is the difference between an analysis and an output.
 - **Refusing outcome leakage.** An earlier draft used `disposition_type` to predict duration. It made the model look excellent and mean nothing.
-- **[`tests/test_pipeline.py`](tests/test_pipeline.py).** 35 tests covering reproducibility, data integrity, the two methodological claims above, calibration against published statistics, and — the group I would suggest reading first — whether every headline figure *in this README* still reconciles with the committed result tables. A README is the part of a repository least likely to be true, because nothing executes it. Here something does.
+- **[`tests/test_pipeline.py`](tests/test_pipeline.py).** 42 tests covering reproducibility, data integrity, the two methodological claims above, calibration against published statistics, and — the group I would suggest reading first — whether every headline figure *in this README* still reconciles with the committed result tables. A README is the part of a repository least likely to be true, because nothing executes it. Here something does.
 - **Catching my own calibration errors.** Two of them, both found by comparing the model's output to a published figure rather than to my expectations. The general civil cohort initially assumed every undefended claim produces a default judgment, which put defaults at 97.4% of judgments against a published 94% — the arithmetic of the MoJ tables says only 53% of undefended claims produce a judgment at all, and the rest are paid or discontinued. Separately, setting the defence-rate intercept to `logit(0.137)` produced a realised rate of 15.2%, because averaging a sigmoid over a covariate is not the sigmoid of the average. Both are now enforced by tests that encode the published figures independently.
 - **Removing the invented judge names.** An earlier version generated realistic surnames ("Hon. Dawson") and attached fabricated grant rates to them. Labelled synthetic or not, that is a bad habit to build in a legal context. There is now a test preventing its return.
 
@@ -328,11 +359,16 @@ litigation-court-analytics/
 │   ├── generate_general_civil.py # general civil comparison cohort
 │   ├── analysis.py               # statistical modelling
 │   ├── charts.py                 # Plotly visualisations
-│   └── compare_populations.py    # commercial vs general civil
+│   ├── compare_populations.py    # commercial vs general civil
+│   ├── dashboard_template.html   # dashboard markup, CSS and JS
+│   └── export_web.py             # inlines data + model -> web/index.html
+│
+├── web/
+│   └── index.html                # self-contained interactive dashboard
 │
 ├── tests/
-│   └── test_pipeline.py          # 35 tests: reproducibility, integrity, method,
-│                                 #           calibration, README consistency
+│   └── test_pipeline.py          # 42 tests: reproducibility, integrity, method,
+│                                 #           calibration, dashboard, README
 │
 ├── scripts/
 │   └── check_reproducibility.py  # CI: numeric comparison of regenerated outputs
