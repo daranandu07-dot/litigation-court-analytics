@@ -12,12 +12,17 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
           cache: pip
+
+      - name: Record the environment
+        run: |
+          python -VV
+          pip list
 
       - name: Install dependencies
         run: pip install -r requirements-dev.txt
@@ -25,13 +30,16 @@ jobs:
       - name: Run the test suite against committed outputs
         run: pytest -v
 
+      - name: Snapshot the committed outputs
+        run: |
+          mkdir -p _snapshot
+          cp -r data results charts _snapshot/
+
       - name: Re-run the full pipeline from scratch
         run: python run_all.py
 
-      - name: Check the pipeline reproduced the committed outputs exactly
-        run: |
-          git diff --exit-code -- data/ charts/ \
-            || (echo "::error::Committed outputs are stale — re-run 'python run_all.py' and commit the result." && exit 1)
+      - name: Check the regenerated outputs match what was committed
+        run: python scripts/check_reproducibility.py _snapshot
 
       - name: Re-run the tests against the freshly generated outputs
         run: pytest -q
