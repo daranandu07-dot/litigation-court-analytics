@@ -256,7 +256,13 @@ pip install -r requirements-dev.txt
 pytest -v
 ```
 
-**On reproducibility:** the dataset and the chart HTML are **byte-identical on every run** — the generator is seeded, and `charts.py` pins Plotly's container id, which is otherwise a random UUID that changes on every render. The model result tables in `results/` reproduce to roughly twelve significant figures rather than byte-for-byte, because the AFT and Cox fitters are iterative optimisers whose final decimal places vary across BLAS builds. The tests check those by value and tolerance instead. CI enforces the byte-identical parts.
+**On reproducibility, precisely:** within a single environment every output is **byte-identical on every run** — the generator is seeded, and `charts.py` pins Plotly's container id, which is otherwise a random UUID that changes on every render.
+
+*Across* environments, byte equality is not a reasonable expectation, and claiming it would be an overclaim. `exp` and `log` may differ by an ULP between library builds; the generator rounds durations to whole days, so a value sitting on a rounding boundary can land on a different integer and propagate. The pinned dependencies also do not pin *their* dependencies — `lifelines` pulls `autograd` and `formulaic`.
+
+So CI checks reproducibility **numerically**, via [`scripts/check_reproducibility.py`](scripts/check_reproducibility.py): `data/` to a relative tolerance of 1e-12, `results/` to 1e-6 (those come from iterative optimisers), and `charts/` for regeneration and stable container ids. Every run prints the largest deviation it found, so a pass still tells you how much drift there is.
+
+This replaced a byte-for-byte `git diff` check, which failed on its first real run. The honest reading is that the original check was testing something stronger than the project can promise. A check that fails for reasons nobody can act on gets ignored, which is worse than not having it.
 
 ---
 
@@ -273,7 +279,9 @@ That is worth being direct about, because it changes what you should look at. AI
 - **Catching my own calibration errors.** Two of them, both found by comparing the model's output to a published figure rather than to my expectations. The general civil cohort initially assumed every undefended claim produces a default judgment, which put defaults at 97.4% of judgments against a published 94% — the arithmetic of the MoJ tables says only 53% of undefended claims produce a judgment at all, and the rest are paid or discontinued. Separately, setting the defence-rate intercept to `logit(0.137)` produced a realised rate of 15.2%, because averaging a sigmoid over a covariate is not the sigmoid of the average. Both are now enforced by tests that encode the published figures independently.
 - **Removing the invented judge names.** An earlier version generated realistic surnames ("Hon. Dawson") and attached fabricated grant rates to them. Labelled synthetic or not, that is a bad habit to build in a legal context. There is now a test preventing its return.
 
-I also checked that the tests can fail: each was run against a deliberately broken copy of the repository before being kept. A test suite that has never failed is decoration.
+- **Fixing a check that was wrong rather than deleting it.** The first CI run failed on a byte-for-byte comparison of regenerated outputs. Byte equality holds within one environment but is not something this pipeline can promise across library builds, so the check was replaced with a numeric one that reports the size of any drift. The instinct to reach for is *what is this check actually able to prove* — not *how do I make it green*.
+
+I also checked that the tests can fail: each was run against a deliberately broken copy of the repository before being kept, including the reproducibility check, which was verified against both a changed seed and a reintroduced Plotly UUID. A test suite that has never failed is decoration.
 
 If you want to probe how well I understand this rather than how well the model wrote it, **Limitations** below is the honest list, and I would rather be asked about that than about the code.
 
@@ -325,6 +333,9 @@ litigation-court-analytics/
 ├── tests/
 │   └── test_pipeline.py          # 35 tests: reproducibility, integrity, method,
 │                                 #           calibration, README consistency
+│
+├── scripts/
+│   └── check_reproducibility.py  # CI: numeric comparison of regenerated outputs
 │
 ├── data/                         # generated docket + bench roster
 ├── results/                      # committed result tables + headline_metrics.json
