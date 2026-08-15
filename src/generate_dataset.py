@@ -48,7 +48,6 @@ ROOT = Path(__file__).resolve().parents[1]
 
 import numpy as np
 import pandas as pd
-from faker import Faker
 
 # ---------------------------------------------------------------------------
 # CONFIGURATION
@@ -68,8 +67,6 @@ OUTPUT_DIR = ROOT / "data"
 OUTPUT_FILE = OUTPUT_DIR / "litigation_court_data.csv"
 
 rng = np.random.default_rng(SEED)
-fake = Faker("en_GB")
-Faker.seed(SEED)
 
 # ---------------------------------------------------------------------------
 # REFERENCE DIMENSIONS
@@ -95,7 +92,48 @@ VENUE_DURATION_OFFSET = {k: v[1] for k, v in VENUES.items()}
 COMPLEXITY_LEVELS = ["Low", "Medium", "High"]
 COMPLEXITY_WEIGHTS = [0.38, 0.42, 0.20]
 
-# Baseline log-days to resolution by complexity (exp -> ~250 / ~380 / ~570 days)
+# ---------------------------------------------------------------------------
+# CALIBRATION AGAINST PUBLISHED STATISTICS
+# ---------------------------------------------------------------------------
+# Parameters below are anchored to published figures wherever a published
+# figure exists for the relevant population. Where none exists, that is stated
+# rather than papered over. Full audit trail, including the parameters that
+# remain uncalibrated and why: docs/calibration.md
+#
+# Sources:
+#   [MoJ]  Civil Justice Statistics Quarterly, England & Wales,
+#          January to March 2026 (Ministry of Justice)
+#   [CC]   Commercial Court Annual Report 2023-24
+#          (Courts and Tribunals Judiciary)
+
+# [MoJ] Median time from claim issue to trial, fast/intermediate/multi-track:
+# 54.3 weeks = 380 days. This is the closest published anchor to a commercial
+# dispute above the small-claims limit, and it is used as a LOWER BOUND rather
+# than a target — see docs/calibration.md for why the model legitimately sits
+# above it.
+MOJ_MULTITRACK_TRIAL_DAYS = 54.3 * 7          # 380.1 days
+
+# [MoJ] Median time from claim issue to trial, small claims track: 37.6 weeks.
+# Recorded for completeness only. Small claims are capped at £10,000 and are
+# out of scope for a £50k-£10m commercial docket; this figure is deliberately
+# NOT used as an anchor.
+MOJ_SMALL_CLAIMS_TRIAL_DAYS = 37.6 * 7        # 263.2 days
+
+# [CC] 95 trials listed, 41 heard in 2023-24 -> 57% of listed trials settled
+# before the court sat. Applied in generate() so that reaching a trial listing
+# does not imply reaching a judgment.
+TRIAL_DOOR_SETTLEMENT_RATE = 0.57
+
+# [CC] 743 claims issued in the Commercial Court in 2023-24; 1,082 across the
+# Commercial Court and London Circuit Commercial Court together. This docket
+# spans four filing years, so N_CASES / 4 is the comparable annual figure.
+CC_ANNUAL_CLAIMS_ISSUED = 1_082
+
+# Baseline log-days to resolution by complexity (exp -> ~250 / ~380 / ~570 days).
+# NOT directly calibrated: neither the MoJ nor the Commercial Court publishes a
+# median duration broken down by case complexity, and the MoJ track figure
+# combines fast, intermediate and multi-track claims, which is a faster
+# population than Commercial Court work. See docs/calibration.md.
 COMPLEXITY_BASE_LOG_DAYS = {"Low": 5.52, "Medium": 5.94, "High": 6.34}
 
 # Effect of complexity on the log-odds of a summary-judgment GRANT.
@@ -140,10 +178,14 @@ def build_judge_panel() -> pd.DataFrame:
     judge_ids = [f"JUD-{i + 1:02d}" for i in range(N_JUDGES)]
     seat_of = {j: v for v, js in JUDGE_SEATS.items() for j in js}
 
+    # Deliberately NO judge names. An earlier draft generated realistic
+    # surnames ("Hon. Dawson"), which attached plausible human names to
+    # fabricated judicial behaviour. Even clearly labelled synthetic, inventing
+    # named judges with invented grant rates is a bad habit in a legal context.
+    # The identifiers carry the analysis perfectly well without them.
     return pd.DataFrame(
         {
             "judge_id": judge_ids,
-            "judge_name": [f"Hon. {fake.last_name()}" for _ in range(N_JUDGES)],
             "court_venue": [seat_of[j] for j in judge_ids],
             "sj_effect": effects,
             "pace_effect": pace,
@@ -272,7 +314,31 @@ def generate() -> pd.DataFrame:
     choice_idx = np.argmax(np.log(probs) + gumbel, axis=1)
     disposition_type = np.array(["Settled", "Dismissed", "Trial Judgment"])[choice_idx]
 
+    # --- Settlement at the door of the court -------------------------------
+    # CALIBRATED. Reaching a trial listing is not the same as being tried. In
+    # the Commercial Court in 2023-24, 95 trials were listed and 41 were heard:
+    # 57% of listed trials settled before the court sat (Commercial Court
+    # Annual Report 2023-24). Modelling a trial listing as though it always
+    # produces a judgment materially overstates how often commercial disputes
+    # are actually adjudicated.
+    #
+    # These cases are recorded as Settled, because that is what they are, but
+    # they are flagged separately: they consumed almost the entire cost and
+    # duration of a trial, which matters for reserving even though the
+    # disposition column says "Settled".
+    listed_for_trial = disposition_type == "Trial Judgment"
+    settles_at_door = listed_for_trial & (rng.random(n) < TRIAL_DOOR_SETTLEMENT_RATE)
+    disposition_type = np.where(settles_at_door, "Settled", disposition_type)
+
     # --- Time to resolution -------------------------------------------------
+    # Duration offset by how the case ended. A case that settles on the
+    # courtroom steps has run nearly the full trial timetable, so it carries
+    # almost the trial offset rather than the ordinary settlement one.
+    disposition_offset = pd.Series(disposition_type).map(
+        {"Settled": 0.0, "Dismissed": -0.22, "Trial Judgment": 0.46}
+    ).to_numpy()
+    disposition_offset = np.where(settles_at_door, 0.40, disposition_offset)
+
     log_days = (
         pd.Series(case_complexity).map(COMPLEXITY_BASE_LOG_DAYS).to_numpy()
         + pd.Series(court_venue).map(VENUE_DURATION_OFFSET).to_numpy()
@@ -281,9 +347,7 @@ def generate() -> pd.DataFrame:
         + 0.10 * summary_judgment_filed
         - 0.38 * summary_judgment_granted          # a granted SJ ends it early
         + 0.11 * np.clip(log_claim_z, -2, 3)
-        + pd.Series(disposition_type)
-        .map({"Settled": 0.0, "Dismissed": -0.22, "Trial Judgment": 0.46})
-        .to_numpy()
+        + disposition_offset
         + rng.normal(0.0, 0.33, size=n)
     )
     true_duration = np.clip(np.round(np.exp(log_days)), 30, None).astype(int)
@@ -348,6 +412,13 @@ def generate() -> pd.DataFrame:
             # --- additions beyond the requested schema, required for survival
             #     analysis in Phase 2. Drop these two columns if you want the
             #     literal schema only.
+            # Calibrated addition: a case recorded as "Settled" that in fact
+            # ran the full trial timetable and settled on the courtroom steps.
+            # Indistinguishable from an ordinary settlement in the disposition
+            # column, but a completely different cost and duration profile.
+            "settled_at_trial_door": pd.Series(settles_at_door).where(
+                pd.Series(resolved)
+            ),
             "case_status": case_status,
             "event_observed": event_observed,
         }
@@ -380,6 +451,13 @@ def validate(df: pd.DataFrame) -> None:
     dismissed = df["disposition_type"] == "Dismissed"
     assert (df.loc[dismissed, "final_awarded_amount_gbp"] == 0).all(), \
         "dismissed case with a non-zero award"
+
+    # A case that settled at the door of the court is, by definition, settled.
+    door = df["settled_at_trial_door"] == True  # noqa: E712 — NaN-safe on object dtype
+    assert (df.loc[door, "disposition_type"] == "Settled").all(), \
+        "trial-door settlement not recorded as Settled"
+    assert df.loc[~resolved, "settled_at_trial_door"].isna().all(), \
+        "ongoing case flagged with a trial-door settlement"
     print("[OK] All integrity checks passed.")
 
 

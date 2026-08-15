@@ -9,9 +9,11 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 STAGES = [
-    ("Generating synthetic docket", "generate_dataset.py"),
+    ("Generating commercial docket", "generate_dataset.py"),
+    ("Generating general civil comparison cohort", "generate_general_civil.py"),
     ("Running statistical analysis", "analysis.py"),
     ("Building interactive charts", "charts.py"),
+    ("Comparing the two populations", "compare_populations.py"),
 ]
 
 for label, script in STAGES:

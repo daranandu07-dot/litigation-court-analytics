@@ -1,0 +1,4 @@
+population,n,resolved,censored_share,naive_median_days,km_median_days,tried_share,administrative_share
+Commercial disputes,5000,3889,0.22219999999999995,359.0,410.0,0.032913345332990486,0.0
+General civil claims,20000,19894,0.005299999999999971,47.0,47.0,0.02261988539258068,0.866542676183774
+General civil — defended only,2761,2655,0.03839188699746465,183.0,188.0,0.1694915254237288,0.0

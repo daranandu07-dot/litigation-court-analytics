@@ -115,8 +115,13 @@ def save(fig: go.Figure, name: str) -> str:
     os.makedirs(CHART_DIR, exist_ok=True)
     path = os.path.join(CHART_DIR, name)
     fig.update_layout(template="litops")
+    # Plotly assigns a random UUID as the container div id on every render, so
+    # otherwise-identical charts differ byte-for-byte between runs and produce
+    # noisy version-control diffs. Deriving the id from the filename instead
+    # makes the chart HTML genuinely reproducible.
     fig.write_html(path, include_plotlyjs="cdn", full_html=True,
-                   config=CONFIG, default_height="100%", default_width="100%")
+                   config=CONFIG, default_height="100%", default_width="100%",
+                   div_id=f"chart-{Path(name).stem}")
     size_kb = os.path.getsize(path) / 1024
     print(f"  [saved] {path}  ({size_kb:.0f} KB)")
     return path

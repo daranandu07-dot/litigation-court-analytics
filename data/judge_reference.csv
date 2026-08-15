@@ -1,11 +1,11 @@
-judge_id,judge_name,court_venue
-JUD-01,Hon. Dawson,London Commercial Court
-JUD-02,Hon. Jennings,London Commercial Court
-JUD-03,Hon. White,High Court — Chancery Division
-JUD-04,Hon. Wilson,High Court — Chancery Division
-JUD-05,Hon. Newman,High Court — KBD (TCC)
-JUD-06,Hon. Davies,US District Court — S.D.N.Y.
-JUD-07,Hon. Norman,US District Court — S.D.N.Y.
-JUD-08,Hon. Hopkins,US District Court — N.D. Cal.
-JUD-09,Hon. Oliver,Singapore International Comm.
-JUD-10,Hon. Holland,Dubai International Fin. Centre
+judge_id,court_venue
+JUD-01,London Commercial Court
+JUD-02,London Commercial Court
+JUD-03,High Court — Chancery Division
+JUD-04,High Court — Chancery Division
+JUD-05,High Court — KBD (TCC)
+JUD-06,US District Court — S.D.N.Y.
+JUD-07,US District Court — S.D.N.Y.
+JUD-08,US District Court — N.D. Cal.
+JUD-09,Singapore International Comm.
+JUD-10,Dubai International Fin. Centre

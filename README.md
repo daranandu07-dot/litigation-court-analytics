@@ -1,109 +1,147 @@
 # Litigation & Court Data Analytics
 
-**Analyzing litigation bottlenecks, judge motion-grant variance, and settlement predictors in commercial contract disputes.**
+**How long will this case take, what will we recover, and does the assigned judge matter?**
 
-A quantitative analysis of 5,000 commercial contract disputes across seven international courts, applying survival analysis, proportion testing, and regression modelling to questions that corporate litigation teams actually have to answer: *how long will this take, what will we recover, and who is hearing it?*
+A reproducible statistical pipeline for commercial litigation portfolios — survival analysis, proportion testing and regression applied to a 5,000-case docket, built to answer the three questions an in-house litigation team is actually asked by its CFO.
 
-> ### ⚠️ This project uses synthetic data
+[![pipeline](https://github.com/daranandu07-dot/litigation-court-analytics/actions/workflows/ci.yml/badge.svg)](https://github.com/daranandu07-dot/litigation-court-analytics/actions/workflows/ci.yml)
+[![licence: MIT](https://img.shields.io/badge/licence-MIT-blue.svg)](LICENSE)
+
+> ### ⚠️ Read this first: the data is synthetic
 >
-> The dataset is **generated, not observed**. It is produced by [`src/generate_dataset.py`](src/generate_dataset.py) from a seeded statistical model with parameters chosen to be plausible — they are **not calibrated against published court statistics**, and no figure here describes any real court, judge, or case.
+> The dataset is **generated, not observed**. It is produced by [`src/generate_dataset.py`](src/generate_dataset.py) from a seeded statistical model. Its parameters are **calibrated against published court statistics wherever a published figure exists for the relevant population**, and where none exists that is stated rather than glossed over — see [`docs/calibration.md`](docs/calibration.md) for the full audit trail, including the parameters that remain uncalibrated and why. No figure anywhere in this repository describes any real court, judge, or case.
 >
-> Every "finding" below is therefore a *recovery of a known signal*, not a discovery about the world. What this project demonstrates is **methodology**: whether the analytical pipeline correctly detects structure that was deliberately placed in the data, and whether it correctly reports its own uncertainty. Applied to real docket data, the same code would produce genuine findings.
+> Every "finding" below is therefore a *recovery of a signal I planted*, not a discovery about the world. What this project demonstrates is **method**: whether the pipeline correctly detects structure deliberately placed in the data, and whether it correctly reports its own uncertainty. Pointed at real docket data, the same code produces real findings.
+>
+> I would rather be obviously honest about this than quietly impressive.
 
 ---
 
-## Executive summary
+## The problem
 
-Commercial litigation is priced and planned around two numbers that firms rarely quantify well: **how long a matter will stay open**, and **how much of the claim will actually be recovered**. This analysis models both, and adds a third dimension most forecasts ignore entirely — **who the assigned judge is**.
+Litigation is planned and priced around two numbers that legal teams rarely quantify well: **how long a matter will stay open**, and **how much of the claim will actually come back**.
 
-### Key strategic insights
+Both are usually estimated from cases that have already closed. That is the wrong sample. In an active docket, the matters still running are disproportionately the slow, difficult, expensive ones — so excluding them systematically flatters every estimate. The technical name for this is **right-censoring**, and it is the unifying problem this project addresses.
 
-**1. Case complexity dominates duration far more than venue choice.**
-High-complexity matters take **2.38x longer** than low-complexity ones (Log-Normal AFT, 95% CI 2.28–2.49). The slowest venue adds only 1.52x relative to the fastest. Forum shopping is a weaker lever than scope control.
-
-**2. Naive duration estimates are systematically optimistic.**
-Excluding still-open cases understates the median high-complexity duration by **147 days** (635 vs. 782). Because unresolved cases are disproportionately the slow ones, any forecast built on closed matters alone will under-reserve. Censoring-corrected estimates are the only defensible basis for planning.
-
-**3. Judicial assignment is a material, quantifiable risk factor.**
-Summary-judgment grant rates range from **7.9% to 42.0%** across the bench (χ² = 131.9, df = 9, p ≈ 5×10⁻²⁴). The sharpest contrast is *within a single court*: two judges on the same bench, hearing the same case mix under the same rules, differ by **5.3x** (p ≈ 8×10⁻²⁰). Jurisdiction cannot explain that gap.
-
-**4. More motions correlate with slower resolution, not faster.**
-Each additional interlocutory motion is associated with a **6.8% longer** case. The procedural activity intended to narrow issues is, on this data, a marker of matters that drift.
-
-**5. Expected recovery is roughly a quarter of the amount claimed.**
-Portfolio-wide recovery is **£0.269 per £1 claimed**. Settlements return 37.4% of claim value; trial judgments return a similar *average* (36.3%) but with **36% total losses** — the same expected value with materially worse variance.
-
----
-
-## Business context & problem statement
-
-In-house litigation teams are asked three questions by their CFO, and usually answer all three from anecdote:
-
-| Question | Why it is hard | What this project does |
+| The question | Why it's hard | What this does about it |
 |---|---|---|
-| *When will this be over?* | Open matters have no duration yet, so they get excluded from averages — biasing every estimate downward | Kaplan-Meier and AFT models that use open cases as censored observations rather than discarding them |
-| *What will we actually recover?* | Recovery is skewed and bimodal; a mean is misleading | Separates aggregate recovery (for reserving) from per-case recovery (for expectations), and reports total-loss frequency |
-| *Does the assigned judge matter?* | Perceived as unmeasurable or improper to ask | Proportion tests with confidence intervals, comparing judges *within* the same venue to isolate the judge from the jurisdiction |
+| *When will this be over?* | Open matters have no duration yet, so they get dropped from averages — biasing every estimate downward | Kaplan-Meier and AFT models that treat open cases as censored observations rather than discarding them |
+| *What will we actually recover?* | Recovery is skewed and bimodal; a mean is misleading | Separates aggregate recovery (for reserving) from per-case recovery (for expectations), and reports how often recovery is zero |
+| *Does the assigned judge matter?* | Widely perceived as unmeasurable, or improper to ask | Proportion tests with confidence intervals, comparing judges *within* the same court so the judge is isolated from the jurisdiction |
 
-The unifying problem is **censoring**: litigation data is generated by a process that is still running. Standard descriptive statistics assume you can see the whole outcome. In an active docket you cannot, and ignoring that produces confidently wrong numbers.
+## Who this is for
+
+Primarily **in-house litigation teams and law firm practice managers** who need to reserve against a portfolio of live disputes rather than forecast a single case — the people who have to put a number in a budget and then defend it.
+
+Secondarily, **litigation funders and legal operations analysts** doing the same exercise for underwriting, and **anyone building legal analytics tooling** who wants a worked example of censoring handled properly.
+
+It is deliberately *not* a case-outcome predictor for an individual matter. The sample sizes and effect sizes here support portfolio-level statements, not advice about your case.
 
 ---
 
-## Methodology & statistical techniques
+## Data sources
 
-### Data generation (`src/generate_dataset.py`)
+**This project has no external data source.** That is unusual enough to state plainly rather than bury.
 
-5,000 cases filed 2022-01-01 to 2025-12-31, observed at a snapshot of 2026-06-30. Seeded (`SEED = 42`) and fully reproducible. Structure deliberately built in:
+| What | Source | Real? |
+|---|---|---|
+| The 5,000-case docket | Generated by [`src/generate_dataset.py`](src/generate_dataset.py), seed 42 | **No — synthetic** |
+| The bench roster | Generated; ten anonymous identifiers (`JUD-01`…`JUD-10`) | **No — synthetic** |
+| Venue names | Real courts, used as labels only | Names real, the data about them is not |
+| Duration and scale anchors | [Civil Justice Statistics Quarterly, Jan–Mar 2026](https://www.gov.uk/government/statistics/civil-justice-statistics-quarterly-january-to-march-2026/civil-justice-statistics-quarterly-january-to-march-2026) (MoJ) and [Commercial Court Annual Report 2023-24](https://www.judiciary.uk/guidance-and-resources/commercial-court-annual-report-2023-24/) | **Yes — real statistics** |
+| Summary-judgment framing | [CPR Part 24](https://www.legislation.gov.uk/uksi/1998/3132/part/24) (England & Wales) and [FRCP 56](https://www.law.cornell.edu/rules/frcp/rule_56) (US federal) | **Yes — real law** |
 
-- **Judges nested within venues** — each judge sits in exactly one court, enforced by assertion. Two outlier judges are seated on the *same* bench so their contrast cannot be confounded with jurisdiction.
-- **Right-censoring arises naturally** — cases whose modelled disposition date falls after the snapshot remain open (22.7% of the docket), rather than being censored at an arbitrary rate.
-- **Log-normal claim values** (£50k–£10m) drawn by rejection sampling, which preserves distribution shape inside the bounds instead of piling mass on the endpoints.
-- **Integrity assertions** — the script fails loudly if any invariant breaks (summary judgment granted without being filed, dates that don't reconcile with `days_to_resolution`, dismissals with non-zero awards).
+### One calibration worth explaining
 
-### Statistical analysis (`src/analysis.py`)
+The Commercial Court listed 95 trials in 2023-24 and heard 41. **57% of listed trials settled before the court sat.** An earlier version of this generator treated a trial listing as producing a judgment, which overstated how often commercial disputes are actually adjudicated by roughly a factor of two.
+
+The model now routes 57% of trial-listed cases to settlement, flagged in a `settled_at_trial_door` column and carrying almost the full trial timetable. This is the difference between a model of litigation and a model of *litigation as it is taught*: most disputes end on the courthouse steps, and the cost profile of a case that settles there looks nothing like the cost profile of one that settles at mediation.
+
+The full comparison — including the parameters that could *not* be anchored to anything published — is in [`docs/calibration.md`](docs/calibration.md).
+
+The venue list mixes English, US, Singaporean and DIFC courts. In reality those courts do not apply the same summary-judgment test, and that matters for reading the judge-variance result:
+
+- Under **CPR 24.3**, an English court may give summary judgment where a party has *"no real prospect of succeeding on the claim, defence or issue"* **and** there is *"no other compelling reason why the case or issue should be disposed of at a trial"*. (Current version dated 1 October 2023.)
+- Under **FRCP 56(a)**, a US federal court grants summary judgment where there is *"no genuine dispute as to any material fact and the movant is entitled to judgment as a matter of law."*
+
+Those are different tests, applied by differently constituted benches to differently pleaded cases. **A cross-venue league table of grant rates would be close to meaningless without controlling for that** — which is exactly why the headline judicial finding below is a *within-court* comparison. The generator does not model the doctrinal difference at all; it applies one grant model everywhere. That is a limitation of the data, not a claim about the law.
+
+---
+
+## Architecture
+
+Three scripts, run in order. Each writes files the next one reads, so any stage can be inspected or replaced on its own.
+
+```
+  src/generate_dataset.py          src/analysis.py              src/charts.py
+  ───────────────────────          ───────────────              ─────────────
+  seeded statistical model   →     survival + proportion   →    four standalone
+  of a 5,000-case docket           + regression models          HTML charts
+          │                                 │                          │
+          ▼                                 ▼                          ▼
+      data/*.csv                      results/*.csv               charts/*.html
+   (docket + bench)            (+ headline_metrics.json)        (self-contained)
+                                            │
+                                            ▼
+                                   tests/test_pipeline.py
+                              checks data, method, and this
+                                 README against results/
+```
+
+`run_all.py` chains all three. There is no database, no service and no API — deliberately. Everything is flat files, so a reader can open any intermediate output and check my working without running anything.
+
+The one design decision worth calling out: **the results are committed to the repository**, not gitignored. Anyone can verify the numbers in this README against `results/` without installing a thing, and CI fails if the committed outputs ever drift from what the code produces.
+
+---
+
+## Method
 
 | Technique | Applied to | Why this one |
 |---|---|---|
 | Median + IQR | Duration by venue and complexity | Robust to the heavy right skew in duration |
-| Kruskal-Wallis H | Venue duration distributions | Non-parametric; makes no normality assumption |
+| Kruskal-Wallis H | Venue duration distributions | Non-parametric; assumes no normality |
 | Wilson score intervals | Judge grant rates | Well-behaved for proportions near 0 and 1, unlike the normal approximation |
 | Chi-square homogeneity | Grant rates across the bench | Tests whether *any* judge differs before examining pairs |
-| Two-proportion z-test | Judge pairs within one venue | Isolates the judge effect by holding jurisdiction constant |
-| Kaplan-Meier | P(case open) at 365/540/720 days | Uses censored observations instead of discarding them |
+| Two-proportion z-test | Judge pairs within one court | Isolates the judge by holding jurisdiction constant |
+| Kaplan-Meier | P(case open) at 365 / 540 / 720 days | Uses censored observations instead of discarding them |
 | Multivariate log-rank | Complexity strata | Tests whether survival curves differ overall |
 | Cox proportional hazards | Multivariable duration | Standard baseline — reported *with* its assumption test |
 | Schoenfeld residuals | Cox PH assumption | Checks whether hazard ratios are stable over time |
 | Weibull / Log-Normal AFT | Multivariable duration | The correct specification once PH is rejected; AIC-selected |
 
-### Two methodological decisions worth flagging
+### Two decisions worth flagging
 
-**Outcome leakage was avoided deliberately.** `disposition_type` and `summary_judgment_granted` are excluded from the duration models. Both are realised at or near the moment a case ends, so including them would predict the outcome using the outcome — a common and invisible error in portfolio work.
+**Outcome leakage was avoided deliberately.** `disposition_type` and `summary_judgment_granted` are excluded from the duration models. Both are realised at or near the moment a case ends, so including them would predict the outcome using the outcome — a common and near-invisible error in portfolio work. [`tests/test_pipeline.py`](tests/test_pipeline.py) asserts they never appear as covariates, so it cannot creep back in later.
 
-**The Cox model failed its own assumption test, and that is reported rather than hidden.** Schoenfeld residuals flagged proportional-hazards violations on 7 of 11 covariates (p < 0.05). Rather than presenting hazard ratios as though they were stable, the pipeline fits Weibull and Log-Normal AFT models and selects on AIC. Log-Normal wins (AIC 50,709 vs. 51,373 for Weibull; concordance 0.780). AFT time ratios are also more directly usable in practice: *"takes 2.38x longer"* briefs better than *"hazard ratio 0.125."*
+**The Cox model failed its own assumption test, and that is reported rather than hidden.** Schoenfeld residuals flagged proportional-hazards violations on 7 of 11 covariates (p < 0.05). Rather than presenting hazard ratios as though they were stable, the pipeline fits Weibull and Log-Normal AFT models and selects on AIC. Log-Normal wins (AIC 50,895 vs 51,495). AFT time ratios also brief better: *"takes 2.31x longer"* is usable in a meeting in a way *"hazard ratio 0.13"* is not.
 
 ---
 
-## Key results
+## Results
 
 ### Time to resolution — censoring-corrected
 
 | Complexity | n | P(open at 365d) | P(open at 540d) | P(open at 720d) | KM median | Naive median | Understated by |
 |---|---|---|---|---|---|---|---|
-| Low | 1,884 | 26.1% | 7.1% | 2.6% | 270 d | 257 d | 13 d |
-| Medium | 2,129 | 68.8% | 34.6% | 16.0% | 451 d | 418 d | 33 d |
-| High | 987 | **94.7%** | **78.1%** | **55.7%** | **782 d** | 635 d | **147 d** |
+| Low | 1,884 | 26.0% | 6.1% | 1.8% | 277 d | 267 d | 10 d |
+| Medium | 2,129 | 68.7% | 35.6% | 15.6% | 452 d | 415 d | 37 d |
+| High | 987 | **94.2%** | **76.2%** | **54.1%** | **759 d** | 629 d | **130 d** |
 
-Log-rank across strata: χ² = 2,180, p < 0.001.
+Log-rank across strata: χ² = 2,213, p < 0.001.
+
+Measuring only closed cases puts the median high-complexity dispute at 629 days. Correcting for still-open matters puts it at 759. **More than half of complex matters outlive the budget cycle they were provisioned in.**
 
 ### Duration drivers — Log-Normal AFT time ratios
 
 | Factor | Time ratio | 95% CI | Interpretation |
 |---|---|---|---|
-| High complexity | **2.38x** | 2.28–2.49 | vs. low complexity |
-| Medium complexity | 1.55x | 1.50–1.59 | vs. low complexity |
-| Slowest venue (TCC) | 1.52x | 1.43–1.60 | vs. fastest venue |
+| High complexity | **2.31x** | 2.22–2.41 | vs low complexity |
+| Medium complexity | 1.54x | 1.50–1.59 | vs low complexity |
+| Slowest venue (TCC) | 1.45x | 1.38–1.53 | vs fastest venue |
 | Each interlocutory motion | 1.07x | 1.06–1.08 | compounds per motion |
-| 10x larger claim | ~1.13x | 1.11–1.14 | per log unit of claim value |
+| Each log unit of claim value | 1.14x | 1.12–1.15 | larger claims run longer |
+
+Scope beats forum: the complexity penalty is larger than the entire fastest-to-slowest venue spread.
 
 ### Judicial variance
 
@@ -113,33 +151,75 @@ Log-rank across strata: χ² = 2,180, p < 0.001.
 | Most grant-prone (JUD-01) | **42.0%** | 36.4–47.9% | 276 |
 | Least grant-prone (JUD-02) | **7.9%** | 5.2–11.8% | 265 |
 
-Both sit in the London Commercial Court. Two-proportion z = 9.12, p ≈ 8×10⁻²⁰.
+Both sit in the same court. Two-proportion z = 9.12, p ≈ 8×10⁻²⁰. Same bench, same case mix, same procedural rules — so jurisdiction cannot explain the gap.
 
 ### Financial recovery
 
-| Disposition | n | Aggregate recovery | Total losses |
+| Disposition | n | Aggregate recovery | Recovered nothing |
 |---|---|---|---|
-| Settled | 2,304 | 37.4% | 0% |
-| Trial judgment | 297 | 36.3% | **36%** |
-| Dismissed | 1,266 | 0% | 100% |
-| **Portfolio** | **3,867** | **26.9%** | — |
+| Settled | 2,483 | 37.1% | 0% |
+| Trial judgment | 128 | 40.0% | **35%** |
+| Dismissed | 1,278 | 0% | 100% |
+| **Portfolio** | **3,889** | **26.7%** | — |
+
+Trial returns a slightly higher average than settlement — and carries a 35% chance of returning nothing at all. Better expected value, materially worse variance, which is not the same thing as a better option for a risk-averse client.
+
+Note the trial sample is small (n = 128) precisely because of the calibration described above: most matters that reach a trial listing settle before the court sits. That is a finding in itself. **Of the 2,483 settlements, 175 settled at the door of the court** — recorded as settlements, but with a median duration of 530 days against 395 for an ordinary settlement. They cost almost what a trial costs. The `disposition_type` column alone would hide that entirely, which is why the dataset flags them separately.
+
+---
+
+### Two populations, and why national averages are useless here
+
+The docket above models *commercial* disputes: every case defended, by represented parties, over years. That is real, and it is a tiny and deeply unrepresentative slice of civil litigation.
+
+The national picture is almost the opposite. Of 527,000 County Court claims issued in Q1 2026, only 72,000 were defended — and of 256,000 judgments given, 94% were default judgments [MoJ]. Roughly six in seven civil claims are never contested at all.
+
+[`src/generate_general_civil.py`](src/generate_general_civil.py) generates that population, calibrated to those published figures, so the two can be compared using identical methodology.
+
+| | Commercial disputes | General civil claims | General civil, defended only |
+|---|---|---|---|
+| n | 5,000 | 20,000 | 2,761 |
+| Median time to resolution (KM) | **410 d** | **47 d** | **188 d** |
+| Ended without any judicial determination | 0% | **86.7%** | 0% |
+| Ended in a trial judgment | 3.3% | 2.3% | 16.9% |
+
+Three things fall out of this, and the second is the one that matters.
+
+**A commercial dispute takes roughly 9x longer than a typical civil claim** — 410 days against 47.
+
+**But that comparison is close to meaningless.** Restrict the general cohort to *defended* claims and the median jumps from 47 days to 188, from the same courts under the same rules. Most of the apparent gap is **composition, not speed**. The national median is short because it is dominated by claims nobody defends, not because those courts are fast.
+
+**And against intuition, both populations rarely reach trial** — 2.3% and 3.3%. Commercial disputes are not meaningfully more likely to be adjudicated. They are more likely to be fought at length and then settled anyway.
+
+The practical consequence: a national average duration cannot be quoted to a commercial client, and a commercial average cannot be quoted as a statistic about the civil justice system. They describe different activities that share a name. See [`charts/chart_populations.html`](charts/chart_populations.html) for the survival curves.
+
+One procedural detail worth noting, because it is where the law sets a hard constraint on the model: under [CPR 10.3](https://www.justice.gov.uk/courts/procedure-rules/civil/rules/part10) a defendant has 14 days from service to acknowledge, and default judgment under CPR Part 12 is not available until that period expires. No default judgment in the cohort is entered sooner, and a test enforces it. A defendant who simply *pays* is under no such constraint, so that path has no floor — a distinction the model would have got wrong if the rule had not been read.
+
+---
+
+## What this suggests for a litigation team
+
+1. **Reserve against censoring-corrected durations, not closed-case averages.** Closed matters are a biased sample; here the bias is roughly four months on complex work.
+2. **Treat scope, not forum, as the primary duration lever.** Narrowing pleaded issues early beats forum selection.
+3. **Track motion-grant rates by judge, with intervals.** A rate without an interval is not evidence — a judge with 40 motions and one with 300 do not warrant equal confidence.
+4. **Set a motion-count trigger for partner review.** Motion volume tracks drift, not acceleration (+6.8% duration per motion). Cheap early warning.
+5. **Price settlement against variance, not just expected value.**
 
 ---
 
 ## Interactive charts
 
-Four standalone, self-contained HTML charts in [`charts/`](charts/) — open [`charts/index.html`](charts/index.html) to preview all four locally.
+Four standalone, self-contained HTML charts in [`charts/`](charts/) — [`charts/index.html`](charts/index.html) previews all four.
 
 | Chart | Shows |
 |---|---|
 | [`chart_survival.html`](charts/chart_survival.html) | Kaplan-Meier curves by complexity with 365/540/720-day horizons |
 | [`chart_judges.html`](charts/chart_judges.html) | Grant rate per judge with Wilson intervals, outliers highlighted |
 | [`chart_duration.html`](charts/chart_duration.html) | Duration distribution by venue and complexity |
-| [`chart_financial.html`](charts/chart_financial.html) | Claim vs. award, log-log, with a dedicated strip for total-loss cases |
+| [`chart_financial.html`](charts/chart_financial.html) | Claim vs award, log-log, with a dedicated strip for total-loss cases |
+| [`chart_populations.html`](charts/chart_populations.html) | Commercial vs general civil survival curves — the composition effect |
 
 Each chart carries its own caveat footnote, because an embedded chart travels away from this README and has to explain itself.
-
-**Embedding:**
 
 ```html
 <iframe src="https://daranandu07-dot.github.io/litigation-court-analytics/charts/chart_survival.html"
@@ -164,12 +244,64 @@ python run_all.py                # generate -> analyse -> visualise
 Or run the stages individually:
 
 ```bash
-python src/generate_dataset.py   # writes data/litigation_court_data.csv
-python src/analysis.py           # writes result tables to results/
-python src/charts.py             # writes interactive HTML to charts/
+python src/generate_dataset.py   # writes data/
+python src/analysis.py           # writes results/
+python src/charts.py             # writes charts/
 ```
 
-Runtime is under a minute. Everything is seeded, so the outputs are byte-identical on every run.
+Runtime is under a minute. To run the checks:
+
+```bash
+pip install -r requirements-dev.txt
+pytest -v
+```
+
+**On reproducibility:** the dataset and the chart HTML are **byte-identical on every run** — the generator is seeded, and `charts.py` pins Plotly's container id, which is otherwise a random UUID that changes on every render. The model result tables in `results/` reproduce to roughly twelve significant figures rather than byte-for-byte, because the AFT and Cox fitters are iterative optimisers whose final decimal places vary across BLAS builds. The tests check those by value and tolerance instead. CI enforces the byte-identical parts.
+
+---
+
+## How this was built, honestly
+
+I am a second-year International Law student. I do not have a computer science background, and this repository was built with heavy AI assistance — the code was largely AI-written from my specifications, iterated on, then checked.
+
+That is worth being direct about, because it changes what you should look at. AI-assisted code is fast to produce and easy to produce *plausibly wrong*: it runs, it emits numbers, and the numbers can be quietly meaningless. Reading the diff does not catch that. So what I claim here is the judgement and the verification, not the keystrokes:
+
+- **Choosing the problem.** Framing this around censoring — rather than the obvious "predict who wins" — is the decision that makes the rest of it worth doing.
+- **Catching the Cox failure.** The first working version reported hazard ratios and stopped. Testing the proportional-hazards assumption, finding it violated on 7 of 11 covariates, and switching specification is the difference between an analysis and an output.
+- **Refusing outcome leakage.** An earlier draft used `disposition_type` to predict duration. It made the model look excellent and mean nothing.
+- **[`tests/test_pipeline.py`](tests/test_pipeline.py).** 35 tests covering reproducibility, data integrity, the two methodological claims above, calibration against published statistics, and — the group I would suggest reading first — whether every headline figure *in this README* still reconciles with the committed result tables. A README is the part of a repository least likely to be true, because nothing executes it. Here something does.
+- **Catching my own calibration errors.** Two of them, both found by comparing the model's output to a published figure rather than to my expectations. The general civil cohort initially assumed every undefended claim produces a default judgment, which put defaults at 97.4% of judgments against a published 94% — the arithmetic of the MoJ tables says only 53% of undefended claims produce a judgment at all, and the rest are paid or discontinued. Separately, setting the defence-rate intercept to `logit(0.137)` produced a realised rate of 15.2%, because averaging a sigmoid over a covariate is not the sigmoid of the average. Both are now enforced by tests that encode the published figures independently.
+- **Removing the invented judge names.** An earlier version generated realistic surnames ("Hon. Dawson") and attached fabricated grant rates to them. Labelled synthetic or not, that is a bad habit to build in a legal context. There is now a test preventing its return.
+
+I also checked that the tests can fail: each was run against a deliberately broken copy of the repository before being kept. A test suite that has never failed is decoration.
+
+If you want to probe how well I understand this rather than how well the model wrote it, **Limitations** below is the honest list, and I would rather be asked about that than about the code.
+
+---
+
+## Limitations
+
+- **Synthetic data.** Calibration anchors the model to real published figures where they exist, but the data is still generated. The results validate the method, not any empirical claim about real courts. This remains the project's binding constraint.
+- **Calibration is partial, and English.** Duration by complexity, judge effects, recovery ratios and motion counts have no published anchor and remain modelling choices. The anchors that do exist are England & Wales figures applied to a docket that is 60% non-English by construction. [`docs/calibration.md`](docs/calibration.md) lists every parameter and its status.
+- **The findings are circular by construction.** I planted the judge effect and then detected it. That demonstrates the detector works; it is not evidence about judges.
+- **No dirty data.** Real dockets contain missing dates, inconsistent venue strings and duplicate filings. This dataset is clean, so it does not exercise data-cleaning skills at all.
+- **Venues are not doctrinally modelled.** As set out under *Data sources*, the generator applies one summary-judgment model across courts that in reality apply different tests.
+- **Judge and venue effects are partly confounded.** Three of the seven venues have a single judge, so within those courts a "slow judge" and a "slow court" are indistinguishable. This is also true of real dockets with small benches.
+- **Multiple comparisons are not corrected across all pairwise judge tests.** The within-court contrast survives any reasonable correction by many orders of magnitude; a marginal result elsewhere would not, and is not treated as a finding.
+- **The Cox model's PH assumption is violated.** Hazard ratios are reported for completeness; the AFT time ratios are the preferred estimates.
+
+---
+
+## What I'd improve next
+
+In the order I would actually do them:
+
+1. **Replace the synthetic docket with real data.** The only change that lifts the ceiling on everything else. US federal dockets are the realistic route — [CourtListener / RECAP](https://www.courtlistener.com/help/api/) exposes real filing and docket-entry data through an API. The catch is that real dockets give dates and events but generally *not* claim amounts or awards, so the financial half of this analysis would not survive the move intact. Working out what genuinely transfers is the interesting part of that job.
+2. **Model the doctrinal difference between venues.** Grant rates under CPR 24.3 and FRCP 56(a) are not measuring the same event. Either restrict the analysis to a single procedural regime, or model the test as a covariate and say so.
+3. **Add a hierarchical model for the judge effect.** Ten judges with 150–300 motions each is exactly the situation partial pooling was designed for. Independent per-judge rates overstate how different the extremes really are; a random-effects model would shrink them appropriately.
+4. **Handle dirty data on purpose.** Introduce missingness, duplicate filings and inconsistent venue strings into the generator, then make the pipeline survive them. The clean data currently hides the fact that no cleaning logic exists.
+5. **Report calibration, not just discrimination.** Concordance of 0.780 says the model ranks cases well. It says nothing about whether "782 days" is right. Predicted-versus-observed survival curves would test that, and calibration is what a client actually relies on.
+6. **Sensitivity analysis on the snapshot date.** Every censoring result depends on `AS_OF`. Re-running across several snapshot dates would show how stable the conclusions are.
 
 ---
 
@@ -178,43 +310,30 @@ Runtime is under a minute. Everything is seeded, so the outputs are byte-identic
 ```
 litigation-court-analytics/
 ├── README.md
-├── requirements.txt
-├── run_all.py                       # runs all three stages in order
-├── .gitignore
+├── requirements.txt              # runtime dependencies
+├── requirements-dev.txt          # + pytest
+├── run_all.py                    # runs all three stages in order
+├── .github/workflows/ci.yml      # test, re-run pipeline, check outputs aren't stale
 │
 ├── src/
-│   ├── generate_dataset.py          # Phase 1 — synthetic docket generation
-│   ├── analysis.py                  # Phase 2 — EDA & statistical modelling
-│   └── charts.py                    # Phase 3 — Plotly visualisations
+│   ├── generate_dataset.py       # commercial docket generation
+│   ├── generate_general_civil.py # general civil comparison cohort
+│   ├── analysis.py               # statistical modelling
+│   ├── charts.py                 # Plotly visualisations
+│   └── compare_populations.py    # commercial vs general civil
 │
-├── data/
-│   ├── litigation_court_data.csv    # 5,000 cases, 15 columns
-│   └── judge_reference.csv          # bench roster (judge -> venue)
+├── tests/
+│   └── test_pipeline.py          # 35 tests: reproducibility, integrity, method,
+│                                 #           calibration, README consistency
 │
-├── results/
-│   ├── duration_by_venue.csv
-│   ├── duration_by_complexity.csv
-│   ├── duration_venue_complexity.csv
-│   ├── recovery_by_disposition.csv
-│   ├── judge_grant_rates.csv
-│   ├── km_survival_summary.csv
-│   ├── km_curves.csv
-│   ├── cox_hazard_ratios.csv
-│   ├── aft_time_ratios.csv
-│   └── headline_metrics.json
-│
-├── charts/
-│   ├── index.html                   # local preview of all four
-│   ├── chart_duration.html
-│   ├── chart_judges.html
-│   ├── chart_survival.html
-│   └── chart_financial.html
-│
+├── data/                         # generated docket + bench roster
+├── results/                      # committed result tables + headline_metrics.json
+├── charts/                       # four self-contained HTML charts + index
 └── docs/
-    └── executive_memo.md            # advisory memo for the case study page
+    ├── calibration.md            # every parameter vs its published anchor
+    ├── OPTIMISATION_PLAN.md      # staged plan for taking this further
+    └── executive_memo.md         # advisory memo written from the results
 ```
-
----
 
 ## Data dictionary
 
@@ -233,42 +352,14 @@ litigation-court-analytics/
 | `disposition_date` | date | **Null if open** |
 | `days_to_resolution` | int | Time to disposition, or time to snapshot if open |
 | `final_awarded_amount_gbp` | float | **Null if open**; 0 for dismissals |
+| `settled_at_trial_door` | bool | Settled after being listed for trial — calibrated to the Commercial Court's 57% rate. **Null if open** |
 | `case_status` | categorical | Resolved / Ongoing |
 | `event_observed` | int | 1 = resolved, 0 = censored (lifelines convention) |
 
-`case_status` and `event_observed` extend the base schema. Without them, Kaplan-Meier degenerates into an empirical CDF and the survival analysis becomes decorative rather than functional.
-
----
-
-## Recommendations for corporate litigation teams
-
-**1. Reserve against censoring-corrected durations, not closed-case averages.**
-Closed matters are a biased sample of all matters — the slow ones are still open and therefore invisible. Reserving on that basis understates high-complexity exposure by roughly five months here.
-
-**2. Treat scope, not forum, as the primary duration lever.**
-Complexity carries a larger time penalty (2.38x) than the fastest-to-slowest venue spread (1.52x). Narrowing pleaded issues early beats forum selection.
-
-**3. Track motion-grant rates by judge, with confidence intervals.**
-Grant rates vary 5x within a single bench. A judge-level base rate, with an interval attached, is a more honest input to a summary-judgment decision than counsel's recollection. **Report the interval, not just the rate** — a judge with 40 motions and one with 300 do not warrant equal confidence.
-
-**4. Set a motion-count trigger for case review.**
-Motion volume tracks with drift rather than acceleration (+6.8% duration per motion). A threshold that triggers partner review is a cheap early-warning mechanism.
-
-**5. Price settlement against variance, not just expected value.**
-Settlement and trial return similar average recovery here (37.4% vs. 36.3%), but trial carries a 36% chance of recovering nothing. For a risk-averse client, equal expected value with materially higher variance is not an equal option.
-
----
-
-## Limitations
-
-- **Synthetic data.** Parameters are plausible but uncalibrated. The results validate the method, not any empirical claim about real courts.
-- **No dirty data.** Real dockets contain missing dates, inconsistent venue strings, and duplicate filings. This dataset is clean, so it does not exercise data-cleaning skills.
-- **Judge and venue effects are partly confounded.** Three of the seven venues have a single judge, so within those courts a "slow judge" and a "slow court" are indistinguishable. This is also true of real dockets with small benches.
-- **Multiple comparisons are not corrected across all pairwise judge tests.** The London contrast survives any reasonable correction by many orders of magnitude; a marginal result elsewhere (p ≈ 0.05) would not, and is not treated as a finding.
-- **The Cox model's PH assumption is violated.** Hazard ratios are reported for completeness but the AFT time ratios are the preferred estimates.
+`case_status` and `event_observed` are additions to the base schema. Without them Kaplan-Meier degenerates into an empirical CDF and the survival analysis becomes decorative rather than functional.
 
 ---
 
 ## Licence
 
-MIT — see `LICENSE`. The dataset is synthetic and carries no confidentiality or privacy restrictions.
+MIT — see [`LICENSE`](LICENSE). The dataset is synthetic and carries no confidentiality or privacy restrictions.

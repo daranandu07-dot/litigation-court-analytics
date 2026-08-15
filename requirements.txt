@@ -6,9 +6,6 @@
 pandas==2.3.3
 numpy==2.2.6
 
-# --- synthetic data generation ---
-Faker==40.36.0
-
 # --- statistical modelling ---
 scipy==1.15.3            # chi-square, Kruskal-Wallis
 statsmodels==0.14.6      # Wilson intervals, two-proportion z-test
